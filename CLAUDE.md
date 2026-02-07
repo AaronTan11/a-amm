@@ -5,6 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Git Conventions
 
 - Do NOT add `Co-Authored-By` lines to commits.
+- Use **Conventional Commits**: `type(scope): description`
+  - `feat` — new feature
+  - `fix` — bug fix
+  - `chore` — maintenance, config, deps
+  - `refactor` — code restructuring (no behavior change)
+  - `test` — adding/updating tests
+  - `docs` — documentation only
+  - Scope is optional but encouraged (e.g., `feat(contracts): ...`, `chore(root): ...`)
 
 ## Project Overview
 
