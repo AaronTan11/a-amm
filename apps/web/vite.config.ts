@@ -10,16 +10,7 @@ export default defineConfig({
     tsconfigPaths(),
     tailwindcss(),
     tanstackStart(),
-    nitro({
-      preset: "vercel",
-      rollupConfig: {
-        output: {
-          // Polyfill window for SSR — ConnectKit's "family" dep accesses window at module load
-          intro:
-            'if(typeof globalThis.window==="undefined"){globalThis.window=globalThis;}',
-        },
-      },
-    }),
+    nitro({ preset: "vercel" }),
     viteReact(),
   ],
   server: {
