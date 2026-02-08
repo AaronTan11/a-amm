@@ -387,8 +387,11 @@ Primary dependency is v4-core. The others are available if needed.
 - **Reputation tags**: `tag1 = "starred"`, `tag2 = "swap"`. On-chain only (no IPFS feedbackURI).
 - **Agent ID mapping**: Aggregator needs `AGENT_IDS` env var (`address:id,...`) to map winner addresses to ERC-8004 agentIds. Frontend uses a hardcoded `AGENT_ID_MAP` in `use-agent-stats.ts` (update after registration).
 - **Frontend leaderboard**: Queries `getSummary()` and `getMetadata(agentId, "name")` via wagmi `useReadContracts` multicall. Shows agent name + reputation score alongside fill count and volume.
+- **`getSummary()` requires non-empty `clientAddresses`** — passing `[]` reverts with "clientAddresses required". Must call `getClients(agentId)` first to get the list of addresses that have given feedback, then pass those to `getSummary()`. The frontend hook uses a two-phase multicall for this.
+- **Self-feedback is forbidden** — the Reputation Registry reverts if `msg.sender` owns the agent they're giving feedback to. The aggregator (different address) must submit feedback, not the agent itself.
+- **Registration emits both `Transfer` and `Registered` events** — must use `decodeEventLog` to match the `Registered` event specifically. Matching raw `topics[1]` can pick up the ERC-721 `Transfer(address(0), owner, tokenId)` event instead, giving `agentId=0`.
 - **Contracts are UUPS upgradeable proxies** — interact via the proxy addresses listed above.
-- **Smoke test**: `bun run packages/agents/src/erc8004-smoke-test.ts` — registers test agent, submits feedback, queries reputation on live Sepolia.
+- **Smoke test**: `bun run packages/agents/src/erc8004-smoke-test.ts` — registers test agent, submits feedback, queries reputation on live Sepolia. Supports `SKIP_REGISTER=1 AGENT_ID=986` to reuse existing registration and `FEEDBACK_AGENT_ID=1` to test feedback on a different agent (saves gas).
 
 ### Deploy Script Notes
 - **Must use deterministic CREATE2 deployer** (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) — Forge rejects `address(this)` in scripts because script addresses are ephemeral. Deploy via `CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode))`.
