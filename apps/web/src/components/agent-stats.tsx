@@ -43,7 +43,7 @@ export default function AgentStats({ agents }: { agents: AgentStat[] }) {
           >
             <span className="text-terminal-amber">{i + 1}</span>
             <span className="text-terminal-green" title={agent.address}>
-              {agent.name ?? truncateAddress(agent.address)}
+              {agent.ensName ?? agent.name ?? truncateAddress(agent.address)}
             </span>
             <span className="text-foreground">{agent.fillCount}</span>
             <span className="text-terminal-dim">

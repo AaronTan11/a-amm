@@ -25,8 +25,18 @@ function statusColor(status: number): string {
   }
 }
 
+const ENS_NAME_MAP: Record<string, string> = {
+  "0xd94c17b860c4b0ca8f76586803ddd07b976ca6a2": "speedy.aamm.eth",
+  "0x4210d287a6a28f96967c2424f162a0bcdd101694": "cautious.aamm.eth",
+  "0x98ca02732d4646000b729292d36de6a853ff00ca": "whale.aamm.eth",
+};
+
 function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}..${addr.slice(-4)}`;
+}
+
+function resolveAgentName(addr: string): string {
+  return ENS_NAME_MAP[addr.toLowerCase()] ?? truncateAddress(addr);
 }
 
 function getDecimals(address: string): number {
@@ -142,9 +152,9 @@ export default function IntentFeed({
                     ? formatAmount(intent.outputAmount, getDecimals(intent.zeroForOne ? intent.poolKey.currency1 : intent.poolKey.currency0))
                     : formatAmount(intent.minOutputAmount, getDecimals(intent.zeroForOne ? intent.poolKey.currency0 : intent.poolKey.currency1)) + " min"}
                 </span>
-                <span className="text-terminal-dim">
+                <span className="text-terminal-dim" title={intent.status === IntentStatus.Filled ? intent.filledBy : undefined}>
                   {intent.status === IntentStatus.Filled
-                    ? truncateAddress(intent.filledBy)
+                    ? resolveAgentName(intent.filledBy)
                     : "--"}
                 </span>
                 {/* Deadline */}

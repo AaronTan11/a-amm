@@ -17,6 +17,7 @@ export interface AgentStat {
   fillCount: number;
   totalOutput: bigint;
   name?: string;
+  ensName?: string;
   reputationScore?: number;
   reputationCount?: number;
   agentId?: bigint;
@@ -29,6 +30,12 @@ const AGENT_ID_MAP: Record<string, bigint> = {
   "0xd94c17b860c4b0ca8f76586803ddd07b976ca6a2": 990n, // Speedy
   "0x4210d287a6a28f96967c2424f162a0bcdd101694": 991n, // Cautious
   "0x98ca02732d4646000b729292d36de6a853ff00ca": 992n, // Whale
+};
+
+const ENS_NAME_MAP: Record<string, string> = {
+  "0xd94c17b860c4b0ca8f76586803ddd07b976ca6a2": "speedy.aamm.eth",
+  "0x4210d287a6a28f96967c2424f162a0bcdd101694": "cautious.aamm.eth",
+  "0x98ca02732d4646000b729292d36de6a853ff00ca": "whale.aamm.eth",
 };
 
 export function useAgentStats(intents: Intent[]) {
@@ -52,6 +59,7 @@ export function useAgentStats(intents: Intent[]) {
         fillCount: stats.count,
         totalOutput: stats.total,
         agentId: AGENT_ID_MAP[address.toLowerCase()],
+        ensName: ENS_NAME_MAP[address.toLowerCase()],
       }))
       .sort((a, b) => b.fillCount - a.fillCount);
   }, [intents]);
