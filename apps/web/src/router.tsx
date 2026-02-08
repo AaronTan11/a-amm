@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createRouter as createTanStackRouter } from "@tanstack/react-router";
-import { ConnectKitProvider } from "connectkit";
+import { ClientOnly, createRouter as createTanStackRouter } from "@tanstack/react-router";
 import { WagmiProvider } from "wagmi";
 
+import ConnectKitWrapper from "./components/connectkit-wrapper";
 import Loader from "./components/loader";
 import "./index.css";
 import { config } from "./lib/wagmi";
@@ -22,9 +22,9 @@ export const getRouter = () => {
     Wrap: ({ children }) => (
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
-          <ConnectKitProvider mode="dark" theme="midnight">
-            {children}
-          </ConnectKitProvider>
+          <ClientOnly fallback={children}>
+            <ConnectKitWrapper>{children}</ConnectKitWrapper>
+          </ClientOnly>
         </QueryClientProvider>
       </WagmiProvider>
     ),
