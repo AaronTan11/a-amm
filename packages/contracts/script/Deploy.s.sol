@@ -21,6 +21,7 @@ contract DeployAammHook is Script {
     // ==================== Sepolia addresses ====================
     address constant POOL_MANAGER = 0xE03A1074c86CFeDd5C142C4F04F1a1536e203543;
     address constant MODIFY_LIQ_ROUTER = 0x0C478023803a644c94c4CE1C1e7b9A087e411B0A;
+    address constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     // Tokens (WETH < USDC lexicographically, so WETH = currency0)
     address constant WETH = 0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9;
@@ -39,7 +40,7 @@ contract DeployAammHook is Script {
 
         bytes memory constructorArgs = abi.encode(IPoolManager(POOL_MANAGER));
         (address hookAddr, bytes32 salt) = HookMiner.find(
-            address(this),
+            CREATE2_DEPLOYER,
             flags,
             type(AammHook).creationCode,
             constructorArgs
@@ -52,8 +53,13 @@ contract DeployAammHook is Script {
 
         vm.startBroadcast();
 
-        AammHook hook = new AammHook{salt: salt}(IPoolManager(POOL_MANAGER));
-        require(address(hook) == hookAddr, "Hook address mismatch");
+        // Deploy via deterministic CREATE2 factory (available on all EVM chains)
+        bytes memory initCode = abi.encodePacked(type(AammHook).creationCode, constructorArgs);
+        (bool success,) = CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode));
+        require(success, "CREATE2 deploy failed");
+
+        AammHook hook = AammHook(hookAddr);
+        require(address(hook).code.length > 0, "Hook not deployed");
         console.log("Hook deployed:", address(hook));
 
         // ==================== 2. Initialize pool ====================
@@ -73,6 +79,9 @@ contract DeployAammHook is Script {
         console.log("Pool initialized: WETH/USDC (fee=3000, tickSpacing=60)");
 
         // ==================== 3. Seed liquidity ====================
+        // NOTE: deployer must hold WETH and USDC before running this script.
+        // For fork testing: use `cast rpc anvil_setBalance` or fund via faucet.
+
         // Approve tokens to the modify liquidity router
         IERC20(WETH).approve(MODIFY_LIQ_ROUTER, type(uint256).max);
         IERC20(USDC).approve(MODIFY_LIQ_ROUTER, type(uint256).max);
@@ -84,7 +93,7 @@ contract DeployAammHook is Script {
             ModifyLiquidityParams({
                 tickLower: -887220, // near MIN_TICK, multiple of 60
                 tickUpper: 887220,  // near MAX_TICK, multiple of 60
-                liquidityDelta: 1e18,
+                liquidityDelta: 1e9, // small for demo; USDC (6 decimals) is the bottleneck
                 salt: 0
             }),
             ""
