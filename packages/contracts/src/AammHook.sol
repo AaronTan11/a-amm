@@ -8,7 +8,7 @@ import {IPoolManager} from "v4-core/interfaces/IPoolManager.sol";
 import {IUnlockCallback} from "v4-core/interfaces/callback/IUnlockCallback.sol";
 import {TickMath} from "v4-core/libraries/TickMath.sol";
 import {PoolKey} from "v4-core/types/PoolKey.sol";
-import {PoolIdLibrary} from "v4-core/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "v4-core/types/PoolId.sol";
 import {Currency, CurrencyLibrary} from "v4-core/types/Currency.sol";
 import {BalanceDelta} from "v4-core/types/BalanceDelta.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary, toBeforeSwapDelta} from "v4-core/types/BeforeSwapDelta.sol";
@@ -66,8 +66,8 @@ contract AammHook is BaseTestHooks, IUnlockCallback, IAammHook {
             return (IHooks.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, 0);
         }
 
-        // Decode the original swapper address from hookData
-        address swapper = abi.decode(hookData, (address));
+        // Decode the original swapper address and slippage tolerance from hookData
+        (address swapper, uint256 minOutputAmount) = abi.decode(hookData, (address, uint256));
 
         // Determine input currency and amount
         Currency inputCurrency = params.zeroForOne ? key.currency0 : key.currency1;
@@ -86,13 +86,14 @@ contract AammHook is BaseTestHooks, IUnlockCallback, IAammHook {
             poolKey: key,
             zeroForOne: params.zeroForOne,
             amountSpecified: params.amountSpecified,
+            minOutputAmount: minOutputAmount,
             deadline: block.number + DEFAULT_DEADLINE_BLOCKS,
             status: IntentStatus.Pending,
             filledBy: address(0),
             outputAmount: 0
         });
 
-        emit IntentCreated(intentId, swapper, params.zeroForOne, params.amountSpecified, block.number + DEFAULT_DEADLINE_BLOCKS);
+        emit IntentCreated(intentId, swapper, PoolId.unwrap(key.toId()), params.zeroForOne, amountIn, minOutputAmount, block.number + DEFAULT_DEADLINE_BLOCKS);
 
         // NoOp: return -amountSpecified as specified delta to skip the AMM.
         // amountSpecified is negative (exact input), so -amountSpecified is positive.
@@ -124,6 +125,7 @@ contract AammHook is BaseTestHooks, IUnlockCallback, IAammHook {
         Intent storage intent = intents[intentId];
         if (intent.status != IntentStatus.Pending) revert IntentNotPending();
         if (block.number > intent.deadline) revert DeadlineAlreadyPassed();
+        if (outputAmount < intent.minOutputAmount) revert InsufficientOutput();
 
         intent.status = IntentStatus.Filled;
         intent.filledBy = msg.sender;

@@ -68,11 +68,15 @@ contract AammHookTest is Test, Deployers {
     // ==================== HELPERS ====================
 
     function _doSwap(address swapper, int256 amountSpecified) internal returns (BalanceDelta) {
+        return _doSwap(swapper, amountSpecified, 0);
+    }
+
+    function _doSwap(address swapper, int256 amountSpecified, uint256 minOutputAmount) internal returns (BalanceDelta) {
         PoolSwapTest.TestSettings memory settings =
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false});
 
-        // hookData encodes the original swapper address
-        bytes memory hookData = abi.encode(swapper);
+        // hookData encodes the original swapper address and slippage tolerance
+        bytes memory hookData = abi.encode(swapper, minOutputAmount);
 
         vm.prank(swapper);
         return swapRouter.swap(
@@ -101,6 +105,7 @@ contract AammHookTest is Test, Deployers {
         assertEq(intent.swapper, alice);
         assertTrue(intent.zeroForOne);
         assertEq(intent.amountSpecified, -int256(amountIn));
+        assertEq(intent.minOutputAmount, 0);
         assertEq(uint8(intent.status), uint8(IntentStatus.Pending));
         assertEq(intent.deadline, block.number + hook.DEFAULT_DEADLINE_BLOCKS());
 
@@ -236,5 +241,74 @@ contract AammHookTest is Test, Deployers {
 
         assertEq(intent0.amountSpecified, -1 ether);
         assertEq(intent1.amountSpecified, -0.5 ether);
+    }
+
+    // ==================== SLIPPAGE PROTECTION TESTS ====================
+
+    function test_beforeSwap_storesMinOutputAmount() public {
+        uint256 amountIn = 1 ether;
+        uint256 minOutput = 0.9 ether;
+
+        _doSwap(alice, -int256(amountIn), minOutput);
+
+        Intent memory intent = hook.getIntent(0);
+        assertEq(intent.minOutputAmount, minOutput);
+    }
+
+    function test_fill_revertsIfOutputBelowMinimum() public {
+        uint256 amountIn = 1 ether;
+        uint256 minOutput = 0.9 ether;
+
+        _doSwap(alice, -int256(amountIn), minOutput);
+
+        vm.prank(agent);
+        vm.expectRevert(IAammHook.InsufficientOutput.selector);
+        hook.fill(0, 0.5 ether); // below minimum
+    }
+
+    function test_fill_succeedsAtExactMinimum() public {
+        uint256 amountIn = 1 ether;
+        uint256 minOutput = 0.9 ether;
+
+        _doSwap(alice, -int256(amountIn), minOutput);
+
+        vm.prank(agent);
+        hook.fill(0, minOutput); // exactly at minimum
+
+        Intent memory intent = hook.getIntent(0);
+        assertEq(uint8(intent.status), uint8(IntentStatus.Filled));
+        assertEq(intent.outputAmount, minOutput);
+    }
+
+    function test_fill_succeedsAboveMinimum() public {
+        uint256 amountIn = 1 ether;
+        uint256 minOutput = 0.9 ether;
+        uint256 betterOutput = 0.95 ether;
+
+        _doSwap(alice, -int256(amountIn), minOutput);
+
+        vm.prank(agent);
+        hook.fill(0, betterOutput); // above minimum
+
+        Intent memory intent = hook.getIntent(0);
+        assertEq(uint8(intent.status), uint8(IntentStatus.Filled));
+        assertEq(intent.outputAmount, betterOutput);
+    }
+
+    function test_fallbackToAMM_ignoresMinOutput() public {
+        uint256 amountIn = 1 ether;
+        uint256 minOutput = 100 ether; // impossibly high minimum
+
+        _doSwap(alice, -int256(amountIn), minOutput);
+
+        // Advance past deadline
+        vm.roll(block.number + hook.DEFAULT_DEADLINE_BLOCKS() + 1);
+
+        // Fallback should succeed regardless of minOutputAmount
+        hook.fallbackToAMM(0);
+
+        Intent memory intent = hook.getIntent(0);
+        assertEq(uint8(intent.status), uint8(IntentStatus.Expired));
+        assertGt(intent.outputAmount, 0);
     }
 }

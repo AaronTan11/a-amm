@@ -16,6 +16,7 @@ struct Intent {
     PoolKey poolKey;
     bool zeroForOne;
     int256 amountSpecified; // negative = exactInput
+    uint256 minOutputAmount; // swapper's slippage tolerance
     uint256 deadline; // block number
     IntentStatus status;
     address filledBy;

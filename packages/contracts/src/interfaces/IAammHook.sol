@@ -8,8 +8,10 @@ interface IAammHook {
     event IntentCreated(
         uint256 indexed intentId,
         address indexed swapper,
+        bytes32 indexed poolId,
         bool zeroForOne,
-        int256 amountSpecified,
+        uint256 amountIn,
+        uint256 minOutputAmount,
         uint256 deadline
     );
     event IntentFilled(uint256 indexed intentId, address indexed agent, uint256 outputAmount);
@@ -20,6 +22,7 @@ interface IAammHook {
     error IntentNotPending();
     error DeadlineNotPassed();
     error DeadlineAlreadyPassed();
+    error InsufficientOutput();
     error OnlySwapper();
     error OnlyPoolManager();
 
