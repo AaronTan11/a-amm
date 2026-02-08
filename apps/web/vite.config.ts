@@ -10,7 +10,12 @@ export default defineConfig({
     tsconfigPaths(),
     tailwindcss(),
     tanstackStart(),
-    nitro({ preset: "vercel" }),
+    nitro({
+      preset: "vercel",
+      alias: {
+        connectkit: new URL("./src/stubs/connectkit.ts", import.meta.url).pathname,
+      },
+    }),
     viteReact(),
   ],
   server: {
