@@ -22,11 +22,12 @@ export default function AgentStats({ agents }: { agents: AgentStat[] }) {
       </CardHeader>
       <CardContent className="p-0">
         {/* Header */}
-        <div className="grid grid-cols-[30px_1fr_50px_80px] gap-2 px-4 py-1.5 text-[10px] uppercase tracking-wider text-terminal-dim border-b border-border">
+        <div className="grid grid-cols-[30px_1fr_50px_80px_60px] gap-2 px-4 py-1.5 text-[10px] uppercase tracking-wider text-terminal-dim border-b border-border">
           <span>#</span>
           <span>Agent</span>
           <span>Fills</span>
           <span>Volume</span>
+          <span>Score</span>
         </div>
 
         {agents.length === 0 && (
@@ -38,15 +39,25 @@ export default function AgentStats({ agents }: { agents: AgentStat[] }) {
         {agents.map((agent, i) => (
           <div
             key={agent.address}
-            className="grid grid-cols-[30px_1fr_50px_80px] gap-2 px-4 py-1.5 text-[11px] border-b border-border/50 hover:bg-accent/30 transition-colors"
+            className="grid grid-cols-[30px_1fr_50px_80px_60px] gap-2 px-4 py-1.5 text-[11px] border-b border-border/50 hover:bg-accent/30 transition-colors"
           >
             <span className="text-terminal-amber">{i + 1}</span>
-            <span className="text-terminal-green">
-              {truncateAddress(agent.address)}
+            <span className="text-terminal-green" title={agent.address}>
+              {agent.name ?? truncateAddress(agent.address)}
             </span>
             <span className="text-foreground">{agent.fillCount}</span>
             <span className="text-terminal-dim">
               {formatEther(agent.totalOutput).slice(0, 8)}
+            </span>
+            <span className="text-terminal-cyan">
+              {agent.reputationScore != null
+                ? `${agent.reputationScore}`
+                : "—"}
+              {agent.reputationCount != null && agent.reputationCount > 0 && (
+                <span className="text-terminal-dim text-[9px] ml-0.5">
+                  ({agent.reputationCount})
+                </span>
+              )}
             </span>
           </div>
         ))}

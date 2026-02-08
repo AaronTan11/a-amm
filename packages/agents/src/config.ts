@@ -6,6 +6,7 @@ export interface AgentConfig {
   clearNodeUrl: string;
   agentStrategy: string;
   appSessionId?: `0x${string}`;
+  agentId?: bigint;
 }
 
 // Anvil account #1 (index 1) — avoids conflict with account #0 used as deployer
@@ -31,6 +32,8 @@ export function loadConfig(): AgentConfig {
   const clearNodeUrl = process.env["CLEARNODE_URL"] ?? "wss://clearnet-sandbox.yellow.com/ws";
   const agentStrategy = process.env["AGENT_STRATEGY"] ?? "speedy";
   const appSessionId = process.env["APP_SESSION_ID"] as `0x${string}` | undefined;
+  const agentIdRaw = process.env["AGENT_ID"];
+  const agentId = agentIdRaw ? BigInt(agentIdRaw) : undefined;
 
   return {
     rpcUrl,
@@ -40,5 +43,6 @@ export function loadConfig(): AgentConfig {
     clearNodeUrl,
     agentStrategy,
     appSessionId,
+    agentId,
   };
 }

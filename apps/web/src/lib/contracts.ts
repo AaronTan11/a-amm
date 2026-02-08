@@ -38,3 +38,20 @@ export const IntentStatus = {
 
 export type IntentStatusType =
   (typeof IntentStatus)[keyof typeof IntentStatus];
+
+// --- ERC-8004 Registries (Sepolia) ---
+
+export const IDENTITY_REGISTRY: Address =
+  "0x8004A818BFB912233c491871b3d84c89A494BD9e";
+export const REPUTATION_REGISTRY: Address =
+  "0x8004B663056A597Dffe9eCcC1965A193B7388713";
+
+export const identityRegistryAbi = parseAbi([
+  "function getMetadata(uint256 agentId, string metadataKey) view returns (bytes)",
+  "function ownerOf(uint256 tokenId) view returns (address)",
+  "function balanceOf(address owner) view returns (uint256)",
+]);
+
+export const reputationRegistryAbi = parseAbi([
+  "function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)",
+]);

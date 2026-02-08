@@ -6,6 +6,8 @@ export interface AggregatorConfig {
   quoteWindowMs: number;
   pollIntervalMs: number;
   appSessionId?: `0x${string}`;
+  sepoliaRpcUrl?: string;
+  agentIds: Map<string, bigint>; // lowercase address → ERC-8004 agentId
 }
 
 // Anvil account #9 — dedicated aggregator key, avoids conflict with agents (1-3) and deployer (0)
@@ -31,6 +33,19 @@ export function loadConfig(): AggregatorConfig {
   const quoteWindowMs = Number(process.env["QUOTE_WINDOW_MS"] ?? "5000");
   const pollIntervalMs = Number(process.env["POLL_INTERVAL_MS"] ?? "2000");
   const appSessionId = process.env["APP_SESSION_ID"] as `0x${string}` | undefined;
+  const sepoliaRpcUrl = process.env["SEPOLIA_RPC_URL"];
+
+  // Parse AGENT_IDS: "0xaddr1:42,0xaddr2:43"
+  const agentIds = new Map<string, bigint>();
+  const agentIdsRaw = process.env["AGENT_IDS"] ?? "";
+  if (agentIdsRaw) {
+    for (const entry of agentIdsRaw.split(",")) {
+      const [addr, id] = entry.trim().split(":");
+      if (addr && id) {
+        agentIds.set(addr.toLowerCase(), BigInt(id));
+      }
+    }
+  }
 
   return {
     rpcUrl,
@@ -40,5 +55,7 @@ export function loadConfig(): AggregatorConfig {
     quoteWindowMs,
     pollIntervalMs,
     appSessionId,
+    sepoliaRpcUrl,
+    agentIds,
   };
 }

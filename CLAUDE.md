@@ -84,6 +84,8 @@ HOOK_ADDRESS=0x... APP_SESSION_ID=0x... bun run packages/aggregator/src/run.ts
 | `CLEARNODE_URL` | No | `wss://clearnet-sandbox.yellow.com/ws` |
 | `QUOTE_WINDOW_MS` | No | `5000` (5 seconds) |
 | `APP_SESSION_ID` | No | Created by setup script |
+| `SEPOLIA_RPC_URL` | No | Enables ERC-8004 reputation feedback |
+| `AGENT_IDS` | No | Address:agentId mapping, e.g. `0xaddr:42,0xaddr:43` |
 
 ### Agents (packages/agents)
 
@@ -109,6 +111,18 @@ APP_SESSION_ID=0x... AGENT_STRATEGY=whale    AGENT_PRIVATE_KEY=0x7c85...07a6 HOO
 | `CLEARNODE_URL` | No | `wss://clearnet-sandbox.yellow.com/ws` |
 | `APP_SESSION_ID` | No | — (standalone mode if unset) |
 | `POLL_INTERVAL_MS` | No | `2000` |
+| `AGENT_ID` | No | ERC-8004 agentId (from registration) |
+
+### ERC-8004 Agent Registration
+
+```bash
+# Register a demo agent on Sepolia (one-time per agent)
+SEPOLIA_RPC_URL=... AGENT_PRIVATE_KEY=0x... AGENT_NAME=Speedy AGENT_STRATEGY=speedy \
+  bun run packages/agents/src/register.ts
+
+# Smoke test: register + feedback + query on live Sepolia
+SEPOLIA_RPC_URL=... PRIVATE_KEY=0x... bun run packages/agents/src/erc8004-smoke-test.ts
+```
 
 ## Architecture
 
@@ -366,12 +380,15 @@ Primary dependency is v4-core. The others are available if needed.
 
 ### ERC-8004 Integration Notes
 - **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
-- **TypeScript SDK**: `agent0-sdk` (v1.5.2) — use for agent registration, feedback submission, and querying.
-- **ABIs available** at `/Users/aarontan/Developer/erc-8004-contracts/abis/` — IdentityRegistry.json, ReputationRegistry.json, ValidationRegistry.json. Can also be used directly with viem/wagmi.
-- **Integration is off-chain**: The hook emits `IntentFilled` events. A keeper or the frontend calls `giveFeedback()` on the Reputation Registry after fills. No ERC-8004 imports needed in Solidity.
-- **Agent registration flow**: Each demo agent calls `register()` on the Identity Registry with metadata (name, strategy, ENS). This is a one-time setup.
-- **Reputation tags**: Use `tag1 = "aamm"`, `tag2 = "fill-quality"` for A-AMM-specific reputation scoring.
+- **Direct viem calls** — uses `parseAbi` with human-readable ABI fragments, same pattern as `abi.ts`. No `agent0-sdk` dependency (avoids IPFS/Pinata setup). Reference ABIs at `/Users/aarontan/Developer/erc-8004-contracts/abis/`.
+- **erc8004.ts is duplicated** in both `packages/agents/` and `packages/aggregator/` — same hackathon pattern as `yellow.ts`.
+- **Agent registration**: One-time script `packages/agents/src/register.ts`. Calls `register(agentURI, metadata)` with name + strategy encoded as ABI parameters. Returns `agentId` (uint256, extracted from `Registered` event topic).
+- **Reputation feedback**: Aggregator calls `giveFeedback()` in `closeAuction()` when a winner is picked. Score = base 50 + percentage improvement over `minOutputAmount`, capped at 100. Fire-and-forget (doesn't block auction flow).
+- **Reputation tags**: `tag1 = "starred"`, `tag2 = "swap"`. On-chain only (no IPFS feedbackURI).
+- **Agent ID mapping**: Aggregator needs `AGENT_IDS` env var (`address:id,...`) to map winner addresses to ERC-8004 agentIds. Frontend uses a hardcoded `AGENT_ID_MAP` in `use-agent-stats.ts` (update after registration).
+- **Frontend leaderboard**: Queries `getSummary()` and `getMetadata(agentId, "name")` via wagmi `useReadContracts` multicall. Shows agent name + reputation score alongside fill count and volume.
 - **Contracts are UUPS upgradeable proxies** — interact via the proxy addresses listed above.
+- **Smoke test**: `bun run packages/agents/src/erc8004-smoke-test.ts` — registers test agent, submits feedback, queries reputation on live Sepolia.
 
 ### Deploy Script Notes
 - **Must use deterministic CREATE2 deployer** (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) — Forge rejects `address(this)` in scripts because script addresses are ephemeral. Deploy via `CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode))`.
@@ -406,6 +423,6 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Yellow integration — aggregator + agents communicate via ClearNode WebSocket
 - [x] Demo agent strategies (Speedy, Cautious, Whale) with off-chain quote competition
 - [x] Smoke test Yellow sandbox connection (auth flow verified)
-- [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
+- [x] Integrate ERC-8004 (direct viem + deployed Sepolia registries)
 - [ ] Wire frontend to contracts
 - [ ] ENS integration (agent subnames)
