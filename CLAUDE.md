@@ -356,6 +356,13 @@ Primary dependency is v4-core. The others are available if needed.
 - **Quote window**: 5 seconds (configurable via `QUOTE_WINDOW_MS`). Aggregator picks highest outputAmount.
 - **yellow.ts is duplicated** in both `packages/aggregator/` and `packages/agents/` — intentional for hackathon speed (no shared package overhead).
 - **Ping keepalive**: 30-second interval to prevent ClearNode from dropping the connection.
+- **Sandbox auth requirements** (discovered via smoke test):
+  - `application` must be `"clearnode"` — custom names like `"a-amm-quotes"` cause `"failed to generate challenge"`.
+  - `allowances` must be `[]` (empty array) — non-empty allowances also cause challenge generation failure.
+  - EIP-712 domain must be `{ name: "clearnode" }` — case-sensitive, `"Clearnet"` fails signature verification.
+  - No pre-funding, registration, or whitelisting needed — any valid private key works.
+  - Server sends `assets` and `channels` broadcasts after auth (not errors, just informational).
+- **Smoke test**: `bun run packages/aggregator/src/smoke-test.ts` — standalone script that verifies WebSocket connect → auth → ping against the live sandbox.
 
 ### ERC-8004 Integration Notes
 - **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
@@ -398,7 +405,7 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Deploy script tested on Anvil fork (hook + pool init + seed liquidity)
 - [x] Yellow integration — aggregator + agents communicate via ClearNode WebSocket
 - [x] Demo agent strategies (Speedy, Cautious, Whale) with off-chain quote competition
-- [ ] Smoke test Yellow sandbox connection (needs live ClearNode)
+- [x] Smoke test Yellow sandbox connection (auth flow verified)
 - [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
 - [ ] Wire frontend to contracts
 - [ ] ENS integration (agent subnames)

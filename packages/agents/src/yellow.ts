@@ -19,7 +19,7 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
 
-const APPLICATION_NAME = "a-amm-quotes";
+const APPLICATION_NAME = "clearnode";
 
 /** Manages ClearNode WebSocket connection, auth, and messaging for agents */
 export class YellowConnection {
@@ -112,7 +112,7 @@ export class YellowConnection {
   private async authenticate(): Promise<void> {
     console.log("[yellow] authenticating...");
 
-    const allowances: RPCAllowance[] = [{ asset: "usdc", amount: "0" }];
+    const allowances: RPCAllowance[] = [];
     const expiresAt = BigInt(Math.floor(Date.now() / 1000) + 86400);
 
     const authReqMsg = await createAuthRequestMessage({
@@ -137,7 +137,7 @@ export class YellowConnection {
         expires_at: expiresAt,
         allowances,
       },
-      { name: "Clearnet" },
+      { name: "clearnode" },
     );
 
     const verifyMsg = await createAuthVerifyMessage(eip712Signer, challenge);
