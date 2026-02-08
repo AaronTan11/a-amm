@@ -3,6 +3,9 @@ export interface AgentConfig {
   agentPrivateKey: `0x${string}`;
   hookAddress: `0x${string}`;
   pollIntervalMs: number;
+  clearNodeUrl: string;
+  agentStrategy: string;
+  appSessionId?: `0x${string}`;
 }
 
 // Anvil account #1 (index 1) — avoids conflict with account #0 used as deployer
@@ -25,11 +28,17 @@ export function loadConfig(): AgentConfig {
 
   const rpcUrl = process.env["RPC_URL"] ?? "http://127.0.0.1:8545";
   const pollIntervalMs = Number(process.env["POLL_INTERVAL_MS"] ?? "2000");
+  const clearNodeUrl = process.env["CLEARNODE_URL"] ?? "wss://clearnet-sandbox.yellow.com/ws";
+  const agentStrategy = process.env["AGENT_STRATEGY"] ?? "speedy";
+  const appSessionId = process.env["APP_SESSION_ID"] as `0x${string}` | undefined;
 
   return {
     rpcUrl,
     agentPrivateKey,
     hookAddress: hookAddress as `0x${string}`,
     pollIntervalMs,
+    clearNodeUrl,
+    agentStrategy,
+    appSessionId,
   };
 }

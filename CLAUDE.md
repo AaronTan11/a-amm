@@ -66,17 +66,38 @@ anvil --fork-url https://sepolia.infura.io/v3/<KEY>
 forge script script/Deploy.s.sol --rpc-url <RPC> --broadcast
 ```
 
+### Aggregator (packages/aggregator)
+
+```bash
+# One-time setup: create Yellow app session
+HOOK_ADDRESS=0x... bun run packages/aggregator/src/setup.ts
+
+# Run aggregator (watches intents, runs quote auctions via Yellow)
+HOOK_ADDRESS=0x... APP_SESSION_ID=0x... bun run packages/aggregator/src/run.ts
+```
+
+| Env var | Required | Default |
+|---------|----------|---------|
+| `HOOK_ADDRESS` | Yes | — |
+| `AGGREGATOR_PRIVATE_KEY` | No | Anvil account #9 |
+| `RPC_URL` | No | `http://127.0.0.1:8545` |
+| `CLEARNODE_URL` | No | `wss://clearnet-sandbox.yellow.com/ws` |
+| `QUOTE_WINDOW_MS` | No | `5000` (5 seconds) |
+| `APP_SESSION_ID` | No | Created by setup script |
+
 ### Agents (packages/agents)
 
 ```bash
-# Start agent (requires HOOK_ADDRESS, defaults to local Anvil)
+# Start agent with Yellow connection (recommended)
+APP_SESSION_ID=0x... AGENT_STRATEGY=speedy HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
+
+# Standalone mode (no Yellow, direct on-chain fill)
 HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
 
-# With custom RPC and key
-RPC_URL=http://... AGENT_PRIVATE_KEY=0x... HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
-
-# Type check
-cd packages/agents && bun run check-types
+# Run all 3 demo agents (use different keys + strategies)
+APP_SESSION_ID=0x... AGENT_STRATEGY=speedy   AGENT_PRIVATE_KEY=0x59c6...690d HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
+APP_SESSION_ID=0x... AGENT_STRATEGY=cautious AGENT_PRIVATE_KEY=0x5de4...365a HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
+APP_SESSION_ID=0x... AGENT_STRATEGY=whale    AGENT_PRIVATE_KEY=0x7c85...07a6 HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
 ```
 
 | Env var | Required | Default |
@@ -84,6 +105,9 @@ cd packages/agents && bun run check-types
 | `HOOK_ADDRESS` | Yes | — |
 | `RPC_URL` | No | `http://127.0.0.1:8545` |
 | `AGENT_PRIVATE_KEY` | No | Anvil account #1 |
+| `AGENT_STRATEGY` | No | `speedy` |
+| `CLEARNODE_URL` | No | `wss://clearnet-sandbox.yellow.com/ws` |
+| `APP_SESSION_ID` | No | — (standalone mode if unset) |
 | `POLL_INTERVAL_MS` | No | `2000` |
 
 ## Architecture
@@ -98,8 +122,8 @@ a-amm/
 │   ├── config/              # Shared TypeScript config (@a-amm/config)
 │   ├── env/                 # Environment variables (t3-env, @a-amm/env)
 │   ├── contracts/           # Foundry - AammHook, ERC-8004 (v4-core submodule in lib/)
-│   ├── agents/              # TypeScript agent — watches intents, fills on-chain (viem)
-│   └── aggregator/          # [TO ADD] Yellow quote channel coordinator
+│   ├── agents/              # Yellow-connected agents with strategies (Speedy, Cautious, Whale)
+│   └── aggregator/          # Yellow quote auction coordinator (@erc7824/nitrolite)
 ```
 
 ### Key Components to Build
@@ -315,10 +339,23 @@ Primary dependency is v4-core. The others are available if needed.
 ### Agent Package Notes
 - Agent uses `viem` with `parseAbi` human-readable format — avoids importing the 44k-token Foundry JSON.
 - Agent approves the **hook address** for output tokens, not the PoolManager. `CurrencySettler` is an inlined library, so `transferFrom` is called from the hook's context.
-- Default private key is Anvil account #1 (index 1, `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`). Account #0 is reserved for deployer.
-- Pricing strategy: 5% spread (`amountIn * 95 / 100`), floored at `minOutputAmount`.
+- Default private key is Anvil account #1 (index 1, `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`). Account #0 is reserved for deployer. Account #9 is reserved for aggregator.
+- **Three strategies**: Speedy (2% spread), Cautious (8% spread, skips tight margins), Whale (3% spread). Selected via `AGENT_STRATEGY` env var.
+- **Dual mode**: With `APP_SESSION_ID` set, agent listens for RFQs via Yellow and submits quotes off-chain. Without it, agent falls back to direct on-chain filling (original behavior).
 - Sequential intent processing (no nonce management). Fine for hackathon.
 - `allowImportingTsExtensions: true` is needed in tsconfig because base config has `verbatimModuleSyntax: true` and Bun requires `.ts` extensions.
+
+### Yellow Integration Notes
+- Uses `@erc7824/nitrolite` SDK for ClearNode WebSocket communication.
+- **Auth flow**: `auth_request` (public) → `auth_challenge` (server) → `auth_verify` (EIP-712 signed). Same key used as both wallet and session key for hackathon simplicity.
+- **App session**: Created by aggregator's setup script. All participants (aggregator + agents) share one session for RFQ/Quote/Winner messaging.
+- **Message protocol**: Three message types flow through the app session:
+  - `RFQ` — aggregator broadcasts intent details to all agents
+  - `Quote` — agent submits price (outputAmount) for an intent
+  - `Winner` — aggregator announces the winning agent
+- **Quote window**: 5 seconds (configurable via `QUOTE_WINDOW_MS`). Aggregator picks highest outputAmount.
+- **yellow.ts is duplicated** in both `packages/aggregator/` and `packages/agents/` — intentional for hackathon speed (no shared package overhead).
+- **Ping keepalive**: 30-second interval to prevent ClearNode from dropping the connection.
 
 ### ERC-8004 Integration Notes
 - **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
@@ -359,8 +396,9 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Simple agent (Layer 1) — monitors IntentCreated, fills on-chain
 - [x] Swap UI with ConnectKit, terminal aesthetic, token selectors
 - [x] Deploy script tested on Anvil fork (hook + pool init + seed liquidity)
+- [x] Yellow integration — aggregator + agents communicate via ClearNode WebSocket
+- [x] Demo agent strategies (Speedy, Cautious, Whale) with off-chain quote competition
+- [ ] Smoke test Yellow sandbox connection (needs live ClearNode)
 - [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
-- [ ] Connect to Yellow sandbox (Layer 2)
-- [ ] Build demo agent strategies (Speedy, Cautious, Whale)
 - [ ] Wire frontend to contracts
 - [ ] ENS integration (agent subnames)

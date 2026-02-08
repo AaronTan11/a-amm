@@ -4,9 +4,11 @@ import { startAgent } from "./agent.ts";
 async function main(): Promise<void> {
   console.log("=== A-AMM Agent ===");
   const config = loadConfig();
-  console.log(`  RPC:  ${config.rpcUrl}`);
-  console.log(`  Hook: ${config.hookAddress}`);
-  console.log(`  Poll: ${config.pollIntervalMs}ms`);
+  console.log(`  RPC:       ${config.rpcUrl}`);
+  console.log(`  Hook:      ${config.hookAddress}`);
+  console.log(`  Strategy:  ${config.agentStrategy}`);
+  console.log(`  ClearNode: ${config.clearNodeUrl}`);
+  console.log(`  Poll:      ${config.pollIntervalMs}ms`);
   console.log("");
 
   await startAgent(config);

@@ -1,10 +1,11 @@
 {
-  "name": "@a-amm/agents",
+  "name": "@a-amm/aggregator",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "bun run src/run.ts",
+    "setup": "bun run src/setup.ts",
     "check-types": "tsc --noEmit"
   },
   "dependencies": {

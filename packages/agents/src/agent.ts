@@ -8,20 +8,31 @@ import {
 import { privateKeyToAccount } from "viem/accounts";
 import { foundry } from "viem/chains";
 import { aammHookAbi, erc20Abi, IntentStatus } from "./abi.ts";
+import { YellowConnection } from "./yellow.ts";
+import { getStrategy } from "./strategies.ts";
 import type { AgentConfig } from "./config.ts";
 
-interface IntentCreatedArgs {
-  intentId?: bigint;
-  swapper?: Address;
-  poolId?: `0x${string}`;
-  zeroForOne?: boolean;
-  amountIn?: bigint;
-  minOutputAmount?: bigint;
-  deadline?: bigint;
+interface RFQMessage {
+  type: "rfq";
+  intentId: number;
+  amountIn: string;
+  minOutputAmount: string;
+  zeroForOne: boolean;
+  currency0: Address;
+  currency1: Address;
+  deadline: number;
+}
+
+interface WinnerMessage {
+  type: "winner";
+  intentId: number;
+  winnerAddress: Address;
+  outputAmount: string;
 }
 
 export async function startAgent(config: AgentConfig): Promise<void> {
   const account = privateKeyToAccount(config.agentPrivateKey);
+  const strategy = getStrategy(config.agentStrategy);
 
   const publicClient = createPublicClient({
     chain: foundry,
@@ -35,63 +46,51 @@ export async function startAgent(config: AgentConfig): Promise<void> {
   });
 
   const agentAddress = account.address;
-  const blockNumber = await publicClient.getBlockNumber();
-
-  console.log(`[Agent] Address: ${agentAddress}`);
-  console.log(`[Agent] Connected — block #${blockNumber}`);
-  console.log(`[Agent] Watching for intents...\n`);
-
-  // Track which tokens we've already approved
   const approvedTokens = new Set<Address>();
 
-  async function handleIntent(args: IntentCreatedArgs): Promise<void> {
-    const { intentId, amountIn, minOutputAmount, deadline } = args;
+  console.log(`[${strategy.name}] Address: ${agentAddress}`);
+  console.log(`[${strategy.name}] Strategy: ${config.agentStrategy}`);
 
-    if (
-      intentId === undefined ||
-      amountIn === undefined ||
-      minOutputAmount === undefined ||
-      deadline === undefined
-    ) {
-      console.log(`[Intent] Skipping — missing event args`);
+  // Connect to Yellow ClearNode
+  const yellow = new YellowConnection(config.agentPrivateKey, config.clearNodeUrl);
+  await yellow.connect();
+
+  // Listen for RFQ and Winner messages from aggregator
+  yellow.onMessage((raw: string) => {
+    try {
+      const parsed = JSON.parse(raw);
+      const params = parsed.req?.[2] ?? parsed.res?.[2];
+      if (!params || typeof params !== "object") return;
+
+      if (params.type === "rfq") {
+        handleRFQ(params as RFQMessage);
+      } else if (params.type === "winner") {
+        handleWinner(params as WinnerMessage);
+      }
+    } catch {
+      // Not a message we care about
+    }
+  });
+
+  console.log(`[${strategy.name}] Listening for RFQs...\n`);
+
+  // Also keep the original on-chain watcher as fallback
+  // (in case no aggregator is running)
+  startOnChainWatcher();
+
+  async function handleRFQ(rfq: RFQMessage): Promise<void> {
+    const amountIn = BigInt(rfq.amountIn);
+    const minOutput = BigInt(rfq.minOutputAmount);
+
+    // Compute quote using strategy
+    const outputAmount = strategy.computeQuote(amountIn, minOutput);
+    if (outputAmount === 0n) {
+      console.log(`[${strategy.name}] Skipping intent #${rfq.intentId} — not profitable`);
       return;
     }
 
-    console.log(
-      `[Intent #${intentId}] New intent: amountIn=${amountIn} minOutput=${minOutputAmount} deadline=block#${deadline}`,
-    );
-
-    // Check if deadline has passed
-    const currentBlock = await publicClient.getBlockNumber();
-    if (currentBlock > deadline) {
-      console.log(`[Intent #${intentId}] Deadline passed, skipping`);
-      return;
-    }
-
-    // Read full intent to verify status
-    const intent = await publicClient.readContract({
-      address: config.hookAddress,
-      abi: aammHookAbi,
-      functionName: "getIntent",
-      args: [intentId],
-    });
-
-    if (intent.status !== IntentStatus.Pending) {
-      console.log(`[Intent #${intentId}] Not pending (status=${intent.status}), skipping`);
-      return;
-    }
-
-    // Compute quote: 5% spread (agent keeps 5% as profit)
-    const baseQuote = (amountIn * 95n) / 100n;
-    const outputAmount =
-      baseQuote > minOutputAmount ? baseQuote : minOutputAmount;
-
-    // Determine output token
-    const outputToken: Address = intent.zeroForOne
-      ? intent.poolKey.currency1
-      : intent.poolKey.currency0;
-
-    // Check agent's balance
+    // Determine output token and check balance
+    const outputToken = rfq.zeroForOne ? rfq.currency1 : rfq.currency0;
     const balance = await publicClient.readContract({
       address: outputToken,
       abi: erc20Abi,
@@ -101,12 +100,57 @@ export async function startAgent(config: AgentConfig): Promise<void> {
 
     if (balance < outputAmount) {
       console.log(
-        `[Intent #${intentId}] Insufficient balance: have ${balance}, need ${outputAmount}`,
+        `[${strategy.name}] Skipping intent #${rfq.intentId} — insufficient balance (have ${balance}, need ${outputAmount})`,
       );
       return;
     }
 
-    // Approve hook if needed (once per token)
+    console.log(
+      `[${strategy.name}] Quoting intent #${rfq.intentId}: outputAmount=${outputAmount}`,
+    );
+
+    // Submit quote via Yellow
+    if (config.appSessionId) {
+      await yellow.sendAppMessage(config.appSessionId, {
+        type: "quote",
+        intentId: rfq.intentId,
+        agentAddress,
+        agentName: strategy.name,
+        outputAmount: outputAmount.toString(),
+        timestamp: Date.now(),
+      });
+    }
+  }
+
+  async function handleWinner(msg: WinnerMessage): Promise<void> {
+    if (msg.winnerAddress.toLowerCase() !== agentAddress.toLowerCase()) {
+      console.log(`[${strategy.name}] Intent #${msg.intentId} won by ${msg.winnerAddress}`);
+      return;
+    }
+
+    console.log(`[${strategy.name}] WON intent #${msg.intentId}! Filling on-chain...`);
+    await fillOnChain(BigInt(msg.intentId), BigInt(msg.outputAmount));
+  }
+
+  async function fillOnChain(intentId: bigint, outputAmount: bigint): Promise<void> {
+    // Read intent to get output token
+    const intent = await publicClient.readContract({
+      address: config.hookAddress,
+      abi: aammHookAbi,
+      functionName: "getIntent",
+      args: [intentId],
+    });
+
+    if (intent.status !== IntentStatus.Pending) {
+      console.log(`[${strategy.name}] Intent #${intentId} no longer pending`);
+      return;
+    }
+
+    const outputToken: Address = intent.zeroForOne
+      ? intent.poolKey.currency1
+      : intent.poolKey.currency0;
+
+    // Approve if needed
     if (!approvedTokens.has(outputToken)) {
       const allowance = await publicClient.readContract({
         address: outputToken,
@@ -116,7 +160,7 @@ export async function startAgent(config: AgentConfig): Promise<void> {
       });
 
       if (allowance < outputAmount) {
-        console.log(`[Intent #${intentId}] Approving hook for output token...`);
+        console.log(`[${strategy.name}] Approving hook for output token...`);
         const approveTx = await walletClient.writeContract({
           address: outputToken,
           abi: erc20Abi,
@@ -124,18 +168,12 @@ export async function startAgent(config: AgentConfig): Promise<void> {
           args: [config.hookAddress, maxUint256],
         });
         await publicClient.waitForTransactionReceipt({ hash: approveTx });
-        console.log(`[Intent #${intentId}] Approved: ${approveTx}`);
       }
-
       approvedTokens.add(outputToken);
     }
 
     // Fill the intent
     try {
-      console.log(
-        `[Intent #${intentId}] Filling with outputAmount=${outputAmount}`,
-      );
-
       const fillTx = await walletClient.writeContract({
         address: config.hookAddress,
         abi: aammHookAbi,
@@ -143,39 +181,44 @@ export async function startAgent(config: AgentConfig): Promise<void> {
         args: [intentId, outputAmount],
       });
 
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: fillTx,
-      });
-
-      console.log(
-        `[Intent #${intentId}] Filled! tx=${fillTx} gas=${receipt.gasUsed}\n`,
-      );
+      const receipt = await publicClient.waitForTransactionReceipt({ hash: fillTx });
+      console.log(`[${strategy.name}] Filled intent #${intentId}! tx=${fillTx} gas=${receipt.gasUsed}\n`);
     } catch (error: unknown) {
-      const message =
-        error instanceof Error ? error.message : String(error);
-
+      const message = error instanceof Error ? error.message : String(error);
       if (message.includes("IntentNotPending")) {
-        console.log(`[Intent #${intentId}] Already filled by another agent`);
+        console.log(`[${strategy.name}] Intent #${intentId} already filled`);
       } else if (message.includes("DeadlineAlreadyPassed")) {
-        console.log(`[Intent #${intentId}] Deadline passed while processing`);
-      } else if (message.includes("InsufficientOutput")) {
-        console.log(`[Intent #${intentId}] Output below minimum (bug)`);
+        console.log(`[${strategy.name}] Intent #${intentId} deadline passed`);
       } else {
-        console.error(`[Intent #${intentId}] Fill failed:`, message);
+        console.error(`[${strategy.name}] Fill failed:`, message);
       }
     }
   }
 
-  // Watch for new IntentCreated events
-  publicClient.watchContractEvent({
-    address: config.hookAddress,
-    abi: aammHookAbi,
-    eventName: "IntentCreated",
-    pollingInterval: config.pollIntervalMs,
-    onLogs: async (logs) => {
-      for (const log of logs) {
-        await handleIntent(log.args as IntentCreatedArgs);
-      }
-    },
-  });
+  // Fallback: direct on-chain watching for when no aggregator is running
+  function startOnChainWatcher(): void {
+    publicClient.watchContractEvent({
+      address: config.hookAddress,
+      abi: aammHookAbi,
+      eventName: "IntentCreated",
+      pollingInterval: config.pollIntervalMs,
+      onLogs: async (logs) => {
+        for (const log of logs) {
+          const args = log.args as any;
+          if (!args.intentId) continue;
+
+          // If we have a Yellow connection, the aggregator handles competition.
+          // Only direct-fill when no app session is configured (standalone mode).
+          if (config.appSessionId) continue;
+
+          const amountIn = args.amountIn as bigint;
+          const minOutput = args.minOutputAmount as bigint;
+          const outputAmount = strategy.computeQuote(amountIn, minOutput);
+          if (outputAmount === 0n) continue;
+
+          await fillOnChain(args.intentId as bigint, outputAmount);
+        }
+      },
+    });
+  }
 }
