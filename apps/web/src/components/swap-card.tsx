@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { parseUnits } from "viem";
 import { useAccount } from "wagmi";
 
 import { Button } from "@/components/ui/button";
-import { useSwap } from "@/hooks/use-swap";
+import { useAllowance } from "@/hooks/use-allowance";
+import { useTokenBalance } from "@/hooks/use-token-balance";
+import { useApproveToken, useSwap } from "@/hooks/use-swap";
 import { DEFAULT_SLIPPAGE_BPS, POOL_CONFIG, TOKENS, type Token } from "@/lib/tokens";
 
 function TokenSelector({
@@ -82,6 +84,35 @@ export default function SwapCard() {
   const [amount, setAmount] = useState("");
   const [slippageBps] = useState(DEFAULT_SLIPPAGE_BPS);
 
+  // Token balance
+  const { balance, formatted: balanceFormatted } = useTokenBalance(
+    fromToken.address,
+    fromToken.decimals,
+  );
+
+  // Allowance check
+  const { isApproved, refetch: refetchAllowance } = useAllowance(
+    fromToken.address,
+    POOL_CONFIG.routerAddress,
+  );
+  const {
+    approve,
+    isPending: isApproving,
+    isSuccess: approveSuccess,
+  } = useApproveToken();
+
+  // Re-check allowance after approval confirms
+  useEffect(() => {
+    if (approveSuccess) refetchAllowance();
+  }, [approveSuccess, refetchAllowance]);
+
+  // Reset state when token changes
+  const handleFromTokenChange = (token: Token) => {
+    setFromToken(token);
+    setAmount("");
+    reset();
+  };
+
   const handleFlip = () => {
     setFromToken(toToken);
     setToToken(fromToken);
@@ -89,15 +120,23 @@ export default function SwapCard() {
     reset();
   };
 
+  // Parse amount for comparison
+  const parsedAmount = amount ? parseUnits(amount, fromToken.decimals) : 0n;
+  const insufficientBalance =
+    balance !== undefined && parsedAmount > 0n && parsedAmount > balance;
+  const needsApproval = parsedAmount > 0n && !isApproved(parsedAmount);
+
+  const handleApprove = () => {
+    approve(fromToken.address, POOL_CONFIG.routerAddress);
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!amount || !isConnected) return;
+    if (!amount || !isConnected || needsApproval) return;
 
-    const amountIn = parseUnits(amount, fromToken.decimals);
-    // Auto-compute min output: amount minus slippage tolerance
+    const amountIn = parsedAmount;
     const minOutput = (amountIn * BigInt(10000 - slippageBps)) / 10000n;
 
-    // Sort tokens to get currency0/currency1 (lower address = currency0)
     const fromLower =
       fromToken.address.toLowerCase() < toToken.address.toLowerCase();
     const currency0 = fromLower ? fromToken.address : toToken.address;
@@ -124,6 +163,87 @@ export default function SwapCard() {
       ).toFixed(4)
     : "";
 
+  // Truncate balance for display
+  const displayBalance = (() => {
+    const dot = balanceFormatted.indexOf(".");
+    if (dot === -1) return balanceFormatted;
+    return balanceFormatted.slice(0, dot + 5); // 4 decimal places
+  })();
+
+  // Handle MAX click
+  const handleMax = () => {
+    if (balance === undefined || balance === 0n) return;
+    // Use the full formatted balance (not truncated) for precision
+    setAmount(balanceFormatted);
+  };
+
+  // Derive button state
+  const getButtonProps = () => {
+    if (!isConnected) {
+      return {
+        label: "Connect Wallet to Swap",
+        disabled: true,
+        className:
+          "w-full h-10 text-sm bg-terminal-dim/10 text-terminal-dim border border-border disabled:opacity-40 transition-all",
+        onClick: undefined as (() => void) | undefined,
+      };
+    }
+    if (!amount || parsedAmount === 0n) {
+      return {
+        label: "Enter Amount",
+        disabled: true,
+        className:
+          "w-full h-10 text-sm bg-terminal-dim/10 text-terminal-dim border border-border disabled:opacity-40 transition-all",
+        onClick: undefined,
+      };
+    }
+    if (insufficientBalance) {
+      return {
+        label: `Insufficient ${fromToken.symbol} Balance`,
+        disabled: true,
+        className:
+          "w-full h-10 text-sm bg-terminal-red/10 text-terminal-red border border-terminal-red/20 disabled:opacity-60 transition-all",
+        onClick: undefined,
+      };
+    }
+    if (needsApproval) {
+      if (isApproving) {
+        return {
+          label: `Approving ${fromToken.symbol}...`,
+          disabled: true,
+          className:
+            "w-full h-10 text-sm bg-terminal-amber/15 text-terminal-amber border border-terminal-amber/30 disabled:opacity-60 animate-pulse transition-all",
+          onClick: undefined,
+        };
+      }
+      return {
+        label: `Approve ${fromToken.symbol}`,
+        disabled: false,
+        className:
+          "w-full h-10 text-sm bg-terminal-amber/15 text-terminal-amber border border-terminal-amber/30 hover:bg-terminal-amber/25 hover:border-terminal-amber/50 transition-all",
+        onClick: handleApprove,
+      };
+    }
+    if (isPending) {
+      return {
+        label: "Submitting Intent...",
+        disabled: true,
+        className:
+          "w-full h-10 text-sm bg-terminal-green/15 text-terminal-green border border-terminal-green/30 disabled:opacity-60 animate-pulse transition-all",
+        onClick: undefined,
+      };
+    }
+    return {
+      label: `Swap ${amount} ${fromToken.symbol} → ${toToken.symbol}`,
+      disabled: false,
+      className:
+        "w-full h-10 text-sm bg-terminal-green/15 text-terminal-green border border-terminal-green/30 hover:bg-terminal-green/25 hover:border-terminal-green/50 transition-all",
+      onClick: undefined, // handled by form submit
+    };
+  };
+
+  const btn = getButtonProps();
+
   return (
     <div className="font-mono relative">
       {/* Subtle glow effect */}
@@ -144,8 +264,22 @@ export default function SwapCard() {
         <form onSubmit={handleSubmit} className="flex flex-col">
           {/* You Pay */}
           <div className="px-5 py-4">
-            <div className="text-[10px] uppercase tracking-wider text-terminal-dim mb-2">
-              You pay
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] uppercase tracking-wider text-terminal-dim">
+                You pay
+              </span>
+              {isConnected && (
+                <div className="flex items-center gap-1.5 text-[10px] text-terminal-dim">
+                  <span>Balance: {displayBalance}</span>
+                  <button
+                    type="button"
+                    onClick={handleMax}
+                    className="text-terminal-cyan hover:text-terminal-cyan/80 transition-colors"
+                  >
+                    [MAX]
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <input
@@ -154,7 +288,6 @@ export default function SwapCard() {
                 placeholder="0"
                 value={amount}
                 onChange={(e) => {
-                  // Only allow numbers and decimal
                   const v = e.target.value;
                   if (v === "" || /^\d*\.?\d*$/.test(v)) setAmount(v);
                 }}
@@ -163,7 +296,7 @@ export default function SwapCard() {
               />
               <TokenSelector
                 selected={fromToken}
-                onSelect={setFromToken}
+                onSelect={handleFromTokenChange}
                 exclude={toToken}
                 disabled={!isConnected}
               />
@@ -224,20 +357,15 @@ export default function SwapCard() {
             </div>
           </div>
 
-          {/* Submit */}
+          {/* Submit / Approve */}
           <div className="px-5 py-4 border-t border-border">
             <Button
-              type="submit"
-              disabled={!isConnected || isPending || !amount}
-              className="w-full h-10 text-sm bg-terminal-green/15 text-terminal-green border border-terminal-green/30 hover:bg-terminal-green/25 hover:border-terminal-green/50 disabled:opacity-20 transition-all"
+              type={btn.onClick ? "button" : "submit"}
+              disabled={btn.disabled}
+              onClick={btn.onClick}
+              className={btn.className}
             >
-              {!isConnected
-                ? "Connect Wallet to Swap"
-                : isPending
-                  ? "Submitting Intent..."
-                  : amount
-                    ? `Swap ${amount} ${fromToken.symbol} → ${toToken.symbol}`
-                    : "Enter Amount"}
+              {btn.label}
             </Button>
           </div>
         </form>
@@ -266,6 +394,7 @@ export default function SwapCard() {
               </span>
             )}
             <button
+              type="button"
               onClick={reset}
               className="ml-auto text-terminal-dim hover:text-foreground"
             >

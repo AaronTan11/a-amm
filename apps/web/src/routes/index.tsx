@@ -1,9 +1,14 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
+import { useAccount } from "wagmi";
 
 import AgentStats from "@/components/agent-stats";
 import IntentFeed from "@/components/intent-feed";
 import SwapCard from "@/components/swap-card";
 import { useAgentStats } from "@/hooks/use-agent-stats";
+import { useCurrentBlock } from "@/hooks/use-block-number";
+import { useCancelIntent, useFallbackToAMM } from "@/hooks/use-intent-actions";
+import { useIntentEvents } from "@/hooks/use-intent-events";
 import { useIntents } from "@/hooks/use-intents";
 
 export const Route = createFileRoute("/")({
@@ -11,8 +16,53 @@ export const Route = createFileRoute("/")({
 });
 
 function HomeComponent() {
-  const { intents, isLoading } = useIntents();
+  const { address } = useAccount();
+  const { intents, isLoading, refetch } = useIntents();
   const { agents } = useAgentStats(intents);
+  const { blockNumber } = useCurrentBlock();
+
+  // Intent actions
+  const {
+    cancel,
+    isPending: isCancelPending,
+    reset: resetCancel,
+  } = useCancelIntent();
+  const {
+    fallback,
+    isPending: isFallbackPending,
+    reset: resetFallback,
+  } = useFallbackToAMM();
+
+  const [cancellingId, setCancellingId] = useState<bigint | null>(null);
+  const [fallbackId, setFallbackId] = useState<bigint | null>(null);
+
+  // Clear action state when tx confirms
+  if (!isCancelPending && cancellingId !== null) {
+    setCancellingId(null);
+    resetCancel();
+  }
+  if (!isFallbackPending && fallbackId !== null) {
+    setFallbackId(null);
+    resetFallback();
+  }
+
+  // Event watching — triggers refetch on any event
+  useIntentEvents({
+    onIntentCreated: () => refetch(),
+    onIntentFilled: () => refetch(),
+    onIntentCancelled: () => refetch(),
+    onIntentFallback: () => refetch(),
+  });
+
+  const handleCancel = (intentId: bigint) => {
+    setCancellingId(intentId);
+    cancel(intentId);
+  };
+
+  const handleFallback = (intentId: bigint) => {
+    setFallbackId(intentId);
+    fallback(intentId);
+  };
 
   return (
     <div className="container mx-auto max-w-6xl px-4 py-6 flex flex-col gap-6">
@@ -48,6 +98,14 @@ function HomeComponent() {
                     : "--"}
                 </div>
               </div>
+              {blockNumber !== undefined && (
+                <div>
+                  <div className="text-[10px] text-terminal-dim">Block</div>
+                  <div className="text-lg text-terminal-dim">
+                    #{blockNumber.toString()}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -67,7 +125,16 @@ function HomeComponent() {
       </div>
 
       {/* Bottom: Intent Feed */}
-      <IntentFeed intents={intents} isLoading={isLoading} />
+      <IntentFeed
+        intents={intents}
+        isLoading={isLoading}
+        currentBlock={blockNumber}
+        connectedAddress={address}
+        onCancel={handleCancel}
+        onFallback={handleFallback}
+        cancellingId={cancellingId}
+        fallbackId={fallbackId}
+      />
     </div>
   );
 }

@@ -13,7 +13,7 @@ export const TOKENS: Token[] = [
   {
     symbol: "USDC",
     name: "USD Coin",
-    address: "0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8",
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
     decimals: 6,
     color: "#2775CA",
   },
