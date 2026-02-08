@@ -272,8 +272,8 @@ Primary dependency is v4-core. The others are available if needed.
 - Tests extend `Test` + `Deployers` from v4-core. Key helpers: `deployFreshManagerAndRouters()`, `deployMintAndApprove2Currencies()`, `initPoolAndAddLiquidity()`.
 
 ### hookData Convention
-- `beforeSwap` receives `hookData` from the swap router. We decode the original swapper address from it: `abi.decode(hookData, (address))`.
-- The frontend/router must pass `abi.encode(userAddress)` as hookData when calling swap.
+- `beforeSwap` receives `hookData` from the swap router. We decode the swapper address and slippage tolerance: `abi.decode(hookData, (address, uint256))`.
+- The frontend/router must pass `abi.encode(userAddress, minOutputAmount)` as hookData when calling swap.
 - `PoolSwapTest` (the test router) passes hookData through transparently.
 
 ### Agent Fill Requirements
@@ -291,7 +291,6 @@ Primary dependency is v4-core. The others are available if needed.
 ### Current Limitations
 - Only handles exact-input swaps (`amountSpecified < 0`). Exact-output swaps pass through to the standard AMM.
 - Deadline is block-based (`DEFAULT_DEADLINE_BLOCKS = 30`), not timestamp-based.
-- No minimum output enforcement on `fill()` — agent can provide any outputAmount. Should add slippage protection.
 - No agent signature verification yet — any address can call `fill()`.
 - Intent stores full `PoolKey` struct (gas-expensive). Production should store `PoolId` and pass `PoolKey` as calldata.
 
@@ -307,7 +306,7 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Frontend scaffolded (Vite + React + TanStack)
 - [x] MCP servers configured (OpenZeppelin Solidity + Uniswap Hooks)
 - [x] Initialize Foundry in packages/contracts
-- [x] Implement A-AMM hook skeleton
+- [x] Implement A-AMM hook with slippage protection
 - [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
 - [ ] Connect to Yellow sandbox
 - [ ] Build demo agents
