@@ -66,6 +66,26 @@ anvil --fork-url https://sepolia.infura.io/v3/<KEY>
 forge script script/Deploy.s.sol --rpc-url <RPC> --broadcast
 ```
 
+### Agents (packages/agents)
+
+```bash
+# Start agent (requires HOOK_ADDRESS, defaults to local Anvil)
+HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
+
+# With custom RPC and key
+RPC_URL=http://... AGENT_PRIVATE_KEY=0x... HOOK_ADDRESS=0x... bun run packages/agents/src/run.ts
+
+# Type check
+cd packages/agents && bun run check-types
+```
+
+| Env var | Required | Default |
+|---------|----------|---------|
+| `HOOK_ADDRESS` | Yes | — |
+| `RPC_URL` | No | `http://127.0.0.1:8545` |
+| `AGENT_PRIVATE_KEY` | No | Anvil account #1 |
+| `POLL_INTERVAL_MS` | No | `2000` |
+
 ## Architecture
 
 ```
@@ -78,7 +98,7 @@ a-amm/
 │   ├── config/              # Shared TypeScript config (@a-amm/config)
 │   ├── env/                 # Environment variables (t3-env, @a-amm/env)
 │   ├── contracts/           # Foundry - AammHook, ERC-8004 (v4-core submodule in lib/)
-│   ├── agents/              # [TO ADD] Demo agents (Speedy, Cautious, Whale)
+│   ├── agents/              # TypeScript agent — watches intents, fills on-chain (viem)
 │   └── aggregator/          # [TO ADD] Yellow quote channel coordinator
 ```
 
@@ -279,6 +299,14 @@ Primary dependency is v4-core. The others are available if needed.
 ### Agent Fill Requirements
 - The agent must `approve(hookAddress, outputAmount)` on the output token BEFORE calling `fill()`. The hook does `transferFrom(agent, poolManager, amount)` inside the unlock callback.
 
+### Agent Package Notes
+- Agent uses `viem` with `parseAbi` human-readable format — avoids importing the 44k-token Foundry JSON.
+- Agent approves the **hook address** for output tokens, not the PoolManager. `CurrencySettler` is an inlined library, so `transferFrom` is called from the hook's context.
+- Default private key is Anvil account #1 (index 1, `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`). Account #0 is reserved for deployer.
+- Pricing strategy: 5% spread (`amountIn * 95 / 100`), floored at `minOutputAmount`.
+- Sequential intent processing (no nonce management). Fine for hackathon.
+- `allowImportingTsExtensions: true` is needed in tsconfig because base config has `verbatimModuleSyntax: true` and Bun requires `.ts` extensions.
+
 ### ERC-8004 Integration Notes
 - **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
 - **TypeScript SDK**: `agent0-sdk` (v1.5.2) — use for agent registration, feedback submission, and querying.
@@ -307,7 +335,9 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] MCP servers configured (OpenZeppelin Solidity + Uniswap Hooks)
 - [x] Initialize Foundry in packages/contracts
 - [x] Implement A-AMM hook with slippage protection
+- [x] Simple agent (Layer 1) — monitors IntentCreated, fills on-chain
 - [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
-- [ ] Connect to Yellow sandbox
-- [ ] Build demo agents
+- [ ] Connect to Yellow sandbox (Layer 2)
+- [ ] Build demo agent strategies (Speedy, Cautious, Whale)
 - [ ] Wire frontend to contracts
+- [ ] ENS integration (agent subnames)
