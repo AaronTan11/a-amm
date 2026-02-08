@@ -84,12 +84,8 @@ export async function startAgent(config: AgentConfig): Promise<void> {
     const amountIn = BigInt(rfq.amountIn);
     const minOutput = BigInt(rfq.minOutputAmount);
 
-    // Determine input/output decimals based on swap direction
-    const inputDecimals = rfq.zeroForOne ? rfq.currency0Decimals : rfq.currency1Decimals;
-    const outputDecimals = rfq.zeroForOne ? rfq.currency1Decimals : rfq.currency0Decimals;
-
-    // Compute quote using strategy (with decimal conversion)
-    const outputAmount = strategy.computeQuote(amountIn, minOutput, inputDecimals, outputDecimals);
+    // Compute quote using strategy (based on user's minOutput)
+    const outputAmount = strategy.computeQuote(amountIn, minOutput);
     if (outputAmount === 0n) {
       console.log(`[${strategy.name}] Skipping intent #${rfq.intentId} — not profitable`);
       return;
@@ -225,25 +221,9 @@ export async function startAgent(config: AgentConfig): Promise<void> {
             args: [args.intentId as bigint],
           });
 
-          // Fetch token decimals for proper scale conversion
-          const [decimals0, decimals1] = await Promise.all([
-            publicClient.readContract({
-              address: intent.poolKey.currency0,
-              abi: erc20Abi,
-              functionName: "decimals",
-            }),
-            publicClient.readContract({
-              address: intent.poolKey.currency1,
-              abi: erc20Abi,
-              functionName: "decimals",
-            }),
-          ]);
-
           const amountIn = args.amountIn as bigint;
           const minOutput = args.minOutputAmount as bigint;
-          const inputDecimals = intent.zeroForOne ? Number(decimals0) : Number(decimals1);
-          const outputDecimals = intent.zeroForOne ? Number(decimals1) : Number(decimals0);
-          const outputAmount = strategy.computeQuote(amountIn, minOutput, inputDecimals, outputDecimals);
+          const outputAmount = strategy.computeQuote(amountIn, minOutput);
           if (outputAmount === 0n) continue;
 
           await fillOnChain(args.intentId as bigint, outputAmount);

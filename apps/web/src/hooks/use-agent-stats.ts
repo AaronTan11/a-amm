@@ -39,13 +39,18 @@ const ENS_NAME_MAP: Record<string, string> = {
 };
 
 export function useAgentStats(intents: Intent[]) {
-  // Step 1: Aggregate fill stats from intents
+  // Step 1: Aggregate fill stats from intents, seeded with all known agents
   const baseAgents = useMemo(() => {
     const map = new Map<string, { count: number; total: bigint }>();
 
+    // Seed all known agents so they always appear in the leaderboard
+    for (const addr of Object.keys(AGENT_ID_MAP)) {
+      map.set(addr, { count: 0, total: 0n });
+    }
+
     for (const intent of intents) {
       if (intent.status !== IntentStatus.Filled) continue;
-      const agent = intent.filledBy;
+      const agent = intent.filledBy.toLowerCase();
       const existing = map.get(agent) ?? { count: 0, total: 0n };
       map.set(agent, {
         count: existing.count + 1,

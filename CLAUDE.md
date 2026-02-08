@@ -359,7 +359,7 @@ Primary dependency is v4-core. The others are available if needed.
 - Agent uses `viem` with `parseAbi` human-readable format — avoids importing the 44k-token Foundry JSON.
 - Agent approves the **hook address** for output tokens, not the PoolManager. `CurrencySettler` is an inlined library, so `transferFrom` is called from the hook's context.
 - Default private key is Anvil account #1 (index 1, `0x70997970C51812dc3A010C7d01b50e0d17dc79C8`). Account #0 is reserved for deployer. Account #9 is reserved for aggregator.
-- **Three strategies**: Speedy (2% spread), Cautious (8% spread, skips tight margins), Whale (3% spread). Selected via `AGENT_STRATEGY` env var.
+- **Three strategies**: Speedy (offers 5% above minOutput), Cautious (offers exactly minOutput, max profit), Whale (offers 2% above minOutput). All quote based on `minOutput` (already in output token scale). Selected via `AGENT_STRATEGY` env var.
 - **Dual mode**: With `APP_SESSION_ID` set, agent listens for RFQs via Yellow and submits quotes off-chain. Without it, agent falls back to direct on-chain filling (original behavior).
 - Sequential intent processing (no nonce management). Fine for hackathon.
 - `allowImportingTsExtensions: true` is needed in tsconfig because base config has `verbatimModuleSyntax: true` and Bun requires `.ts` extensions.
@@ -416,17 +416,23 @@ Primary dependency is v4-core. The others are available if needed.
 - **RPC URL**: Stored in `packages/contracts/.env` (gitignored). Set `SEPOLIA_RPC_URL=...` there.
 - Tested end-to-end on Anvil fork of Sepolia: hook deploy + pool init + seed liquidity all succeed.
 
+### ConnectKit SSR Fix (Vercel)
+- **ConnectKit's `family.mjs` accesses `window` at module load time**, crashing any Node.js serverless function. `defaultSsr: false` in TanStack Start only skips rendering, not module imports — doesn't help.
+- **Solution**: Use `<ClientOnly>` from `@tanstack/react-router` to wrap all ConnectKit imports. The Babel compiler plugin strips `<ClientOnly>` children from the server bundle, so ConnectKit code is fully tree-shaken out.
+- **Key files**: `connectkit-wrapper.tsx` (wraps `ConnectKitProvider`), `wallet-button-inner.tsx` (wraps `ConnectKitButton`), both wrapped by `<ClientOnly>` in their parent components.
+- **wagmi config**: Replaced ConnectKit's `getDefaultConfig` with plain `createConfig({ ssr: true })` to remove the last server-side connectkit import.
+- **Vercel build**: `vercel.json` uses `buildCommand: "cd apps/web && bun run build && mkdir -p ../../.vercel && cp -r .vercel/output ../../.vercel/output"` to copy the build output to the project root where Vercel expects it.
+
 ### Frontend Display Notes
 - **Intent amounts must use token-aware formatting** — `formatUnits(amount, decimals)` not `formatEther`. USDC is 6 decimals; using `formatEther` (18 decimals) shows "0.0000" for valid amounts. The intent feed resolves decimals from the poolKey currency addresses via `TOKENS` config.
 
-### Agent Output Amount Decimal Bug
-- **Agent strategies compute `outputAmount` in input token scale, not output token scale.** For USDC→WETH swaps: `amountIn` is ~1000000 (USDC, 6 decimals), strategy returns `980000` (still USDC scale). But `fill()` stores this as the WETH output amount. Frontend formats with WETH decimals (18): `980000 / 1e18 ≈ 0` → shows "0.0000".
-- **Fix needed in strategies**: Agent must convert from input token decimals to output token decimals. For the hackathon demo pool (USDC→WETH), multiply by `1e12` (18 - 6 = 12 decimal difference). Or better: pass token decimals info in the RFQ and let agents compute properly.
-- **The contract itself is fine** — it stores whatever `outputAmount` the agent passes. The bug is in the agent's quote computation.
+### Agent Output Amount Decimal Fix
+- **Strategies now quote based on `minOutput`** (which the frontend computes in the correct output token scale) instead of scaling `amountIn` across decimal differences. This avoids the previous bug where USDC→WETH swaps produced wildly incorrect output amounts due to 6→18 decimal mismatch.
+- **The contract itself is fine** — it stores whatever `outputAmount` the agent passes.
 
 ### Sepolia Agent Deployment
 - **3 agents registered on ERC-8004**: Speedy (ID=990, `0xd94C17B860C4B0Ca8f76586803DdD07B976cA6A2`), Cautious (ID=991, `0x4210d287a6A28F96967c2424f162a0BCDd101694`), Whale (ID=992, `0x98cA02732d4646000b729292d36de6A853FF00cA`)
-- **Agent wallets funded** with 0.005 ETH + 0.005 WETH each from dev wallet.
+- **Agent wallets funded** with ETH + WETH from dev/aggregator wallets (Speedy has ~0.15 ETH + 0.1 WETH, Cautious/Whale have ~0.1 ETH + 0.05 WETH each).
 - **APP_SESSION_ID**: `0xda6f82153c94ce3fe32e143fdf9caba97d494a1ec0cfce9b36a87d6ca7267722`
 - **`.env` files** in `packages/agents/.env` and `packages/aggregator/.env` (gitignored) contain all keys and config.
 
@@ -461,6 +467,8 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Register 3 demo agents on ERC-8004 (Speedy=990, Cautious=991, Whale=992)
 - [x] Fund agent wallets with ETH + WETH on Sepolia
 - [x] Agent standalone fill works (on-chain watcher, Speedy filled intent #2)
+- [x] Fix agent output amount decimals (strategies now quote based on minOutput)
+- [x] ENS integration (agent subnames displayed in leaderboard + intent feed)
+- [x] Frontend deployed on Vercel (ClientOnly wrapper for ConnectKit SSR fix)
+- [x] All 3 agents running in standalone mode on Sepolia
 - [ ] Fix Yellow messaging (`sid` field for message forwarding)
-- [ ] Fix agent output amount decimals (USDC→WETH scale conversion)
-- [ ] ENS integration (agent subnames)
