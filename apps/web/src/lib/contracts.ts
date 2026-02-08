@@ -54,4 +54,5 @@ export const identityRegistryAbi = parseAbi([
 
 export const reputationRegistryAbi = parseAbi([
   "function getSummary(uint256 agentId, address[] clientAddresses, string tag1, string tag2) view returns (uint64 count, int128 summaryValue, uint8 summaryValueDecimals)",
+  "function getClients(uint256 agentId) view returns (address[])",
 ]);

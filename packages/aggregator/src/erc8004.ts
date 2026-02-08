@@ -1,5 +1,6 @@
 import {
   parseAbi,
+  decodeEventLog,
   type Address,
   type PublicClient,
   type WalletClient,
@@ -87,10 +88,20 @@ export async function registerAgent(
 
   const receipt = await publicClient.waitForTransactionReceipt({ hash });
 
-  // Extract agentId from the Registered event
+  // Extract agentId from the Registered event (not the ERC-721 Transfer event)
   for (const log of receipt.logs) {
-    if (log.address.toLowerCase() === IDENTITY_REGISTRY.toLowerCase() && log.topics[1]) {
-      return BigInt(log.topics[1]);
+    if (log.address.toLowerCase() !== IDENTITY_REGISTRY.toLowerCase()) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: identityRegistryAbi,
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName === "Registered") {
+        return (decoded.args as { agentId: bigint }).agentId;
+      }
+    } catch {
+      // Not a Registered event, skip
     }
   }
 
@@ -123,11 +134,11 @@ export async function submitFeedback(
   await publicClient.waitForTransactionReceipt({ hash });
 }
 
-/** Query reputation summary for an agent */
+/** Query reputation summary for an agent. clientAddresses is required (non-empty). */
 export async function getReputation(
   publicClient: PublicClient,
   agentId: bigint,
-  clientAddresses: Address[] = [],
+  clientAddresses: Address[],
 ): Promise<{ count: number; score: number }> {
   const [count, summaryValue] = await publicClient.readContract({
     address: REPUTATION_REGISTRY,

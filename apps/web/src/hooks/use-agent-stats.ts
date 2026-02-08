@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useReadContracts } from "wagmi";
-import { decodeAbiParameters, parseAbiParameters } from "viem";
+import { decodeAbiParameters, parseAbiParameters, type Address } from "viem";
 
 import {
   IntentStatus,
@@ -54,7 +54,24 @@ export function useAgentStats(intents: Intent[]) {
       .sort((a, b) => b.fillCount - a.fillCount);
   }, [intents]);
 
-  // Step 2: Build multicall for ERC-8004 queries (reputation + name)
+  // Step 2a: Fetch client addresses for each known agent (needed by getSummary)
+  const clientCalls = useMemo(() => {
+    return baseAgents
+      .filter((a) => a.agentId != null)
+      .map((a) => ({
+        address: REPUTATION_REGISTRY,
+        abi: reputationRegistryAbi,
+        functionName: "getClients" as const,
+        args: [a.agentId!],
+      }));
+  }, [baseAgents]);
+
+  const { data: clientResults } = useReadContracts({
+    contracts: clientCalls as any,
+    query: { enabled: clientCalls.length > 0 },
+  });
+
+  // Step 2b: Build multicall for reputation + name queries using client addresses
   const contracts = useMemo(() => {
     const calls: {
       address: `0x${string}`;
@@ -63,18 +80,28 @@ export function useAgentStats(intents: Intent[]) {
       args: unknown[];
     }[] = [];
 
+    let clientIdx = 0;
     for (const agent of baseAgents) {
       if (!agent.agentId) continue;
 
-      // getSummary for reputation
-      calls.push({
-        address: REPUTATION_REGISTRY,
-        abi: reputationRegistryAbi,
-        functionName: "getSummary",
-        args: [agent.agentId, [], "starred", "swap"],
-      });
+      // Get client addresses from phase 1 results
+      let clients: Address[] = [];
+      if (clientResults?.[clientIdx]?.status === "success") {
+        clients = clientResults[clientIdx].result as Address[];
+      }
+      clientIdx++;
 
-      // getMetadata for name
+      // Skip getSummary if no clients (would revert)
+      if (clients.length > 0) {
+        calls.push({
+          address: REPUTATION_REGISTRY,
+          abi: reputationRegistryAbi,
+          functionName: "getSummary",
+          args: [agent.agentId, clients, "starred", "swap"],
+        });
+      }
+
+      // getMetadata for name (always works)
       calls.push({
         address: IDENTITY_REGISTRY,
         abi: identityRegistryAbi,
@@ -84,7 +111,7 @@ export function useAgentStats(intents: Intent[]) {
     }
 
     return calls;
-  }, [baseAgents]);
+  }, [baseAgents, clientResults]);
 
   const { data: multicallResults } = useReadContracts({
     contracts: contracts as any,
@@ -96,25 +123,35 @@ export function useAgentStats(intents: Intent[]) {
     if (!multicallResults || contracts.length === 0) return baseAgents;
 
     let resultIdx = 0;
+    let clientIdx = 0;
     return baseAgents.map((agent) => {
       if (!agent.agentId) return agent;
 
-      const summaryResult = multicallResults[resultIdx];
-      const nameResult = multicallResults[resultIdx + 1];
-      resultIdx += 2;
+      // Determine if this agent had clients (and thus a getSummary call)
+      let hasClients = false;
+      if (clientResults?.[clientIdx]?.status === "success") {
+        const clients = clientResults[clientIdx].result as Address[];
+        hasClients = clients.length > 0;
+      }
+      clientIdx++;
 
       let reputationScore: number | undefined;
       let reputationCount: number | undefined;
       let name: string | undefined;
 
-      // Parse reputation summary
-      if (summaryResult?.status === "success" && Array.isArray(summaryResult.result)) {
-        const [count, value] = summaryResult.result as [bigint, bigint, number];
-        reputationCount = Number(count);
-        reputationScore = Number(value);
+      // Parse reputation summary (only present if agent had clients)
+      if (hasClients) {
+        const summaryResult = multicallResults[resultIdx];
+        if (summaryResult?.status === "success" && Array.isArray(summaryResult.result)) {
+          const [count, value] = summaryResult.result as [bigint, bigint, number];
+          reputationCount = Number(count);
+          reputationScore = Number(value);
+        }
+        resultIdx++;
       }
 
       // Parse name metadata
+      const nameResult = multicallResults[resultIdx];
       if (nameResult?.status === "success" && nameResult.result) {
         try {
           const raw = nameResult.result as `0x${string}`;
@@ -126,10 +163,11 @@ export function useAgentStats(intents: Intent[]) {
           // ignore decode errors
         }
       }
+      resultIdx++;
 
       return { ...agent, name, reputationScore, reputationCount };
     });
-  }, [baseAgents, multicallResults, contracts.length]);
+  }, [baseAgents, multicallResults, clientResults, contracts.length]);
 
   return { agents };
 }
