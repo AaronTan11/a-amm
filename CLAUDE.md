@@ -250,9 +250,22 @@ Primary dependency is v4-core. The others are available if needed.
 
 ## Testnet Addresses (Sepolia)
 
+### Uniswap v4 Contracts
 - PoolManager: `0xE03A1074c86CFeDd5C142C4F04F1a1536e203543`
+- PoolSwapTest (router): `0x9B6b46e2c869aa39918Db7f52f5557FE577B6eEe`
+- PoolModifyLiquidityTest: `0x0C478023803a644c94c4CE1C1e7b9A087e411B0A`
 - PositionManager: `0x429ba70129df741B2Ca2a85BC3A2a3328e5c09b4`
 - Universal Router: `0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b`
+- StateView: `0xe1dd9c3fa50edb962e442f60dfbc432e24537e4c`
+- Quoter: `0x61b3f2011a92d183c7dbadbda940a7555ccf9227`
+- Permit2: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
+
+### Testnet ERC-20 Tokens
+- USDC: `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` (6 decimals)
+- WETH: `0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9` (18 decimals)
+- DAI: `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357` (18 decimals)
+
+### Other Services
 - Yellow Sandbox: `wss://clearnet-sandbox.yellow.com/ws`
 - ERC-8004 Identity Registry: `0x8004A818BFB912233c491871b3d84c89A494BD9e`
 - ERC-8004 Reputation Registry: `0x8004B663056A597Dffe9eCcC1965A193B7388713`
