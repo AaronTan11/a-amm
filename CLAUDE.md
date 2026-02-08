@@ -329,6 +329,14 @@ Primary dependency is v4-core. The others are available if needed.
 - **Reputation tags**: Use `tag1 = "aamm"`, `tag2 = "fill-quality"` for A-AMM-specific reputation scoring.
 - **Contracts are UUPS upgradeable proxies** — interact via the proxy addresses listed above.
 
+### Deploy Script Notes
+- **Must use deterministic CREATE2 deployer** (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) — Forge rejects `address(this)` in scripts because script addresses are ephemeral. Deploy via `CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode))`.
+- **USDC (6 decimals) is the liquidity bottleneck** — at 1:1 sqrtPrice, `liquidityDelta: 1e18` needs ~1e12 USDC. Use `1e9` for demo amounts.
+- **Deployer must hold WETH + USDC** before running. On fork: wrap ETH via `cast send $WETH "deposit()" --value 10ether`, mint USDC by impersonating the USDC owner.
+- **Token ordering**: WETH (`0x7b...`) < USDC (`0x94...`), so WETH = currency0.
+- **RPC URL**: Stored in `packages/contracts/.env` (gitignored). Set `SEPOLIA_RPC_URL=...` there.
+- Tested end-to-end on Anvil fork of Sepolia: hook deploy + pool init + seed liquidity all succeed.
+
 ### Current Limitations
 - Only handles exact-input swaps (`amountSpecified < 0`). Exact-output swaps pass through to the standard AMM.
 - Deadline is block-based (`DEFAULT_DEADLINE_BLOCKS = 30`), not timestamp-based.
@@ -349,6 +357,8 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Initialize Foundry in packages/contracts
 - [x] Implement A-AMM hook with slippage protection
 - [x] Simple agent (Layer 1) — monitors IntentCreated, fills on-chain
+- [x] Swap UI with ConnectKit, terminal aesthetic, token selectors
+- [x] Deploy script tested on Anvil fork (hook + pool init + seed liquidity)
 - [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
 - [ ] Connect to Yellow sandbox (Layer 2)
 - [ ] Build demo agent strategies (Speedy, Cautious, Whale)
