@@ -88,7 +88,7 @@ a-amm/
 |-----------|------|---------|
 | A-AMM Hook | Solidity/Foundry | v4 hook with NoOp pattern for async intents |
 | Yellow Integration | TypeScript | Quote coordination via @erc7824/nitrolite |
-| ERC-8004 | Solidity | Agent identity and reputation registries |
+| ERC-8004 | TypeScript (agent0-sdk) | Integrate with deployed registries on Sepolia |
 | Demo Agents | TypeScript | AI agents with different trading strategies |
 
 ## Uniswap v4 Hook Technical Details
@@ -206,6 +206,11 @@ These are cloned locally for reference (not part of the monorepo):
   - Example hooks: `src/test/DeltaReturningHook.sol`, `src/test/FeeTakingHook.sol`
 - **v4-periphery**: `/Users/aarontan/Developer/v4-periphery`
 - **universal-router**: `/Users/aarontan/Developer/universal-router`
+- **trustless-agents-erc-ri**: `/Users/aarontan/Developer/trustless-agents-erc-ri` — Foundry reference impl (74/74 tests)
+- **erc-8004-contracts**: `/Users/aarontan/Developer/erc-8004-contracts` — Hardhat impl with ABIs at `abis/`
+- **agent0-ts**: `/Users/aarontan/Developer/agent0-ts` — TypeScript SDK (agent0-sdk v1.5.2)
+- **best-practices**: `/Users/aarontan/Developer/best-practices` — ERC-8004 registration & reputation best practices
+- **awesome-8004**: `/Users/aarontan/Developer/awesome-8004` — Curated resource list
 
 Primary dependency is v4-core. The others are available if needed.
 
@@ -221,6 +226,7 @@ Primary dependency is v4-core. The others are available if needed.
 - [v4 Async Swap Docs](https://docs.uniswap.org/contracts/v4/quickstart/hooks/async-swap)
 - [Yellow SDK](https://docs.yellow.org/docs/build/quick-start/)
 - [ERC-8004 Spec](https://eips.ethereum.org/EIPS/eip-8004)
+- [HowTo8004](https://howto8004.com/) — Integration guide and best practices
 
 ## Testnet Addresses (Sepolia)
 
@@ -228,6 +234,10 @@ Primary dependency is v4-core. The others are available if needed.
 - PositionManager: `0x429ba70129df741B2Ca2a85BC3A2a3328e5c09b4`
 - Universal Router: `0x3A9D48AB9751398BbFa63ad67599Bb04e4BdF98b`
 - Yellow Sandbox: `wss://clearnet-sandbox.yellow.com/ws`
+- ERC-8004 Identity Registry: `0x8004A818BFB912233c491871b3d84c89A494BD9e`
+- ERC-8004 Reputation Registry: `0x8004B663056A597Dffe9eCcC1965A193B7388713`
+- ERC-8004 Validation Registry: `0x8004Cb1BF31DAf7788923b405b754f57acEB4272`
+- ERC-8004 Mainnet: `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432`
 
 ## MCP Servers Available
 
@@ -269,6 +279,15 @@ Primary dependency is v4-core. The others are available if needed.
 ### Agent Fill Requirements
 - The agent must `approve(hookAddress, outputAmount)` on the output token BEFORE calling `fill()`. The hook does `transferFrom(agent, poolManager, amount)` inside the unlock callback.
 
+### ERC-8004 Integration Notes
+- **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
+- **TypeScript SDK**: `agent0-sdk` (v1.5.2) — use for agent registration, feedback submission, and querying.
+- **ABIs available** at `/Users/aarontan/Developer/erc-8004-contracts/abis/` — IdentityRegistry.json, ReputationRegistry.json, ValidationRegistry.json. Can also be used directly with viem/wagmi.
+- **Integration is off-chain**: The hook emits `IntentFilled` events. A keeper or the frontend calls `giveFeedback()` on the Reputation Registry after fills. No ERC-8004 imports needed in Solidity.
+- **Agent registration flow**: Each demo agent calls `register()` on the Identity Registry with metadata (name, strategy, ENS). This is a one-time setup.
+- **Reputation tags**: Use `tag1 = "aamm"`, `tag2 = "fill-quality"` for A-AMM-specific reputation scoring.
+- **Contracts are UUPS upgradeable proxies** — interact via the proxy addresses listed above.
+
 ### Current Limitations
 - Only handles exact-input swaps (`amountSpecified < 0`). Exact-output swaps pass through to the standard AMM.
 - Deadline is block-based (`DEFAULT_DEADLINE_BLOCKS = 30`), not timestamp-based.
@@ -280,8 +299,7 @@ Primary dependency is v4-core. The others are available if needed.
 
 1. **Quote window duration** — 10 seconds vs 30 seconds
 2. **Who submits winning quote on-chain** — Agent vs keeper vs user
-3. **ERC-8004 deployment** — Find existing on Sepolia or deploy our own
-4. **Agent inventory** — How do agents source liquidity for fills
+3. **Agent inventory** — How do agents source liquidity for fills
 
 ## Current Status
 
@@ -290,7 +308,7 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] MCP servers configured (OpenZeppelin Solidity + Uniswap Hooks)
 - [x] Initialize Foundry in packages/contracts
 - [x] Implement A-AMM hook skeleton
-- [ ] Implement ERC-8004 contracts (or integrate existing)
+- [ ] Integrate ERC-8004 (already deployed on Sepolia — use agent0-sdk)
 - [ ] Connect to Yellow sandbox
 - [ ] Build demo agents
 - [ ] Wire frontend to contracts
