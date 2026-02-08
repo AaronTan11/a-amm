@@ -298,10 +298,15 @@ Primary dependency is v4-core. The others are available if needed.
 - Quoter: `0x61b3f2011a92d183c7dbadbda940a7555ccf9227`
 - Permit2: `0x000000000022D473030F116dDEE9F6B43aC78BA3`
 
+### A-AMM Deployment
+- AammHook: `0x964453F9c597e30EB5C2f331b389FD0eA8d6c0c8`
+- Active pool: Circle USDC / WETH (fee=3000, tickSpacing=60)
+
 ### Testnet ERC-20 Tokens
-- USDC: `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` (6 decimals)
+- USDC (Circle): `0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238` (6 decimals) — official Circle Sepolia faucet
 - WETH: `0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9` (18 decimals)
 - DAI: `0xFF34B3d4Aee8ddCd6F9AFFFB6Fe49bD371b8a357` (18 decimals)
+- USDC (Aave, deprecated): `0x94a9D9AC8a22534E3FaCa9F4e7F2E2cf85d5E4C8` — old pool, do not use
 
 ### Other Services
 - Yellow Sandbox: `wss://clearnet-sandbox.yellow.com/ws`
@@ -393,13 +398,22 @@ Primary dependency is v4-core. The others are available if needed.
 - **Contracts are UUPS upgradeable proxies** — interact via the proxy addresses listed above.
 - **Smoke test**: `bun run packages/agents/src/erc8004-smoke-test.ts` — registers test agent, submits feedback, queries reputation on live Sepolia. Supports `SKIP_REGISTER=1 AGENT_ID=986` to reuse existing registration and `FEEDBACK_AGENT_ID=1` to test feedback on a different agent (saves gas).
 
+### Sepolia Deployment Notes
+- **Hook was originally only on Anvil fork** — the first `Deploy.s.sol` run used Anvil account #0 (`0xf39F...`), so it never hit live Sepolia. `DeployHook.s.sol` was created to deploy just the hook without pool init/liquidity.
+- **Three deploy scripts**: `DeployHook.s.sol` (hook only), `InitPool.s.sol` (Circle USDC pool init), `SeedLiquidity.s.sol` (liquidity only). `Deploy.s.sol` is the original all-in-one (uses Aave USDC, not recommended).
+- **`PoolAlreadyInitialized` if you re-run InitPool** — the pool init is a one-time operation. If it succeeds but liquidity seeding fails, use `SeedLiquidity.s.sol` separately.
+
 ### Deploy Script Notes
 - **Must use deterministic CREATE2 deployer** (`0x4e59b44847b379578588920cA78FbF26c0B4956C`) — Forge rejects `address(this)` in scripts because script addresses are ephemeral. Deploy via `CREATE2_DEPLOYER.call(abi.encodePacked(salt, initCode))`.
-- **USDC (6 decimals) is the liquidity bottleneck** — at 1:1 sqrtPrice, `liquidityDelta: 1e18` needs ~1e12 USDC. Use `1e9` for demo amounts.
+- **USDC (6 decimals) is the liquidity bottleneck** — at 1:1 sqrtPrice, `liquidityDelta: 1e9` needs ~1000 USDC. Use `1e6` for testnet (needs ~1 USDC).
 - **Deployer must hold WETH + USDC** before running. On fork: wrap ETH via `cast send $WETH "deposit()" --value 10ether`, mint USDC by impersonating the USDC owner.
-- **Token ordering**: WETH (`0x7b...`) < USDC (`0x94...`), so WETH = currency0.
+- **Token ordering flipped with Circle USDC**: Circle USDC (`0x1c...`) < WETH (`0x7b...`), so USDC = currency0. Old Aave USDC (`0x94...`) > WETH, so WETH was currency0. The frontend handles this correctly via lowercase address comparison.
+- **Two deploy scripts**: `Deploy.s.sol` deploys the hook + old Aave pool. `InitPool.s.sol` initializes the Circle USDC pool on the existing hook.
 - **RPC URL**: Stored in `packages/contracts/.env` (gitignored). Set `SEPOLIA_RPC_URL=...` there.
 - Tested end-to-end on Anvil fork of Sepolia: hook deploy + pool init + seed liquidity all succeed.
+
+### Frontend Display Notes
+- **Intent amounts must use token-aware formatting** — `formatUnits(amount, decimals)` not `formatEther`. USDC is 6 decimals; using `formatEther` (18 decimals) shows "0.0000" for valid amounts. The intent feed resolves decimals from the poolKey currency addresses via `TOKENS` config.
 
 ### Current Limitations
 - Only handles exact-input swaps (`amountSpecified < 0`). Exact-output swaps pass through to the standard AMM.
@@ -427,5 +441,6 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Demo agent strategies (Speedy, Cautious, Whale) with off-chain quote competition
 - [x] Smoke test Yellow sandbox connection (auth flow verified)
 - [x] Integrate ERC-8004 (direct viem + deployed Sepolia registries)
-- [ ] Wire frontend to contracts
+- [x] Wire frontend to contracts (approval flow, balances, cancel/fallback, event toasts)
+- [x] Deploy hook + Circle USDC pool to Sepolia
 - [ ] ENS integration (agent subnames)

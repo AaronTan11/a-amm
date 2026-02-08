@@ -37,7 +37,7 @@ export function useIntents() {
     abi: aammHookAbi,
     functionName: "nextIntentId",
     query: {
-      refetchInterval: 4000,
+      refetchInterval: 15_000,
     },
   });
 
@@ -62,7 +62,7 @@ export function useIntents() {
     contracts,
     query: {
       enabled: intentCount > 0,
-      refetchInterval: 4000,
+      refetchInterval: 15_000,
     },
   });
 

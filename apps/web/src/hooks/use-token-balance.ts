@@ -20,7 +20,7 @@ export function useTokenBalance(
     args: [address!],
     query: {
       enabled: !!address && !!tokenAddress,
-      refetchInterval: 12_000,
+      refetchInterval: 30_000,
     },
   });
 

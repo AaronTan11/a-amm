@@ -1,13 +1,12 @@
 import { getDefaultConfig } from "connectkit";
 import { createConfig, http } from "wagmi";
-import { foundry, sepolia } from "wagmi/chains";
+import { sepolia } from "wagmi/chains";
 
 export const config = createConfig(
   getDefaultConfig({
-    chains: [foundry, sepolia],
+    chains: [sepolia],
     transports: {
-      [foundry.id]: http("http://127.0.0.1:8545"),
-      [sepolia.id]: http(),
+      [sepolia.id]: http("https://eth-sepolia.g.alchemy.com/v2/hM0KzZPuizy-BDEWjpOzm"),
     },
     walletConnectProjectId: import.meta.env["VITE_WC_PROJECT_ID"] ?? "",
     appName: "A-AMM",

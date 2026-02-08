@@ -1,5 +1,5 @@
 import { useRef, useEffect } from "react";
-import { formatEther } from "viem";
+import { formatUnits } from "viem";
 
 import {
   Card,
@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/card";
 import { IntentStatus } from "@/lib/contracts";
 import { type Intent, statusLabel } from "@/hooks/use-intents";
+import { TOKENS } from "@/lib/tokens";
 
 function statusColor(status: number): string {
   switch (status) {
@@ -28,11 +29,18 @@ function truncateAddress(addr: string): string {
   return `${addr.slice(0, 6)}..${addr.slice(-4)}`;
 }
 
-function formatAmount(wei: bigint): string {
-  const eth = formatEther(wei < 0n ? -wei : wei);
-  const dot = eth.indexOf(".");
-  if (dot === -1) return eth;
-  return eth.slice(0, dot + 5);
+function getDecimals(address: string): number {
+  const token = TOKENS.find(
+    (t) => t.address.toLowerCase() === address.toLowerCase(),
+  );
+  return token?.decimals ?? 18;
+}
+
+function formatAmount(wei: bigint, decimals: number): string {
+  const val = formatUnits(wei < 0n ? -wei : wei, decimals);
+  const dot = val.indexOf(".");
+  if (dot === -1) return val;
+  return val.slice(0, dot + 5);
 }
 
 interface IntentFeedProps {
@@ -127,12 +135,12 @@ export default function IntentFeed({
                   {statusLabel(intent.status)}
                 </span>
                 <span className="text-foreground">
-                  {formatAmount(intent.amountSpecified)}
+                  {formatAmount(intent.amountSpecified, getDecimals(intent.zeroForOne ? intent.poolKey.currency0 : intent.poolKey.currency1))}
                 </span>
                 <span className={intent.status === IntentStatus.Filled ? "text-terminal-green" : "text-terminal-dim"}>
                   {intent.status === IntentStatus.Filled
-                    ? formatAmount(intent.outputAmount)
-                    : formatAmount(intent.minOutputAmount) + " min"}
+                    ? formatAmount(intent.outputAmount, getDecimals(intent.zeroForOne ? intent.poolKey.currency1 : intent.poolKey.currency0))
+                    : formatAmount(intent.minOutputAmount, getDecimals(intent.zeroForOne ? intent.poolKey.currency0 : intent.poolKey.currency1)) + " min"}
                 </span>
                 <span className="text-terminal-dim">
                   {intent.status === IntentStatus.Filled
