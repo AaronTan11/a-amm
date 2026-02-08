@@ -17,11 +17,20 @@ import { YellowConnection } from "./yellow.ts";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 
-// Default Anvil accounts for agents
+// Agent private keys — read from env vars
+const SPEEDY_KEY = process.env["SPEEDY_PRIVATE_KEY"] as `0x${string}` | undefined;
+const CAUTIOUS_KEY = process.env["CAUTIOUS_PRIVATE_KEY"] as `0x${string}` | undefined;
+const WHALE_KEY = process.env["WHALE_PRIVATE_KEY"] as `0x${string}` | undefined;
+
+if (!SPEEDY_KEY || !CAUTIOUS_KEY || !WHALE_KEY) {
+  console.error("Missing agent keys. Set SPEEDY_PRIVATE_KEY, CAUTIOUS_PRIVATE_KEY, WHALE_PRIVATE_KEY env vars.");
+  process.exit(1);
+}
+
 const AGENT_KEYS = {
-  speedy:   "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d", // Anvil #1
-  cautious: "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a", // Anvil #2
-  whale:    "0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6", // Anvil #3
+  speedy:   SPEEDY_KEY,
+  cautious: CAUTIOUS_KEY,
+  whale:    WHALE_KEY,
 } as const;
 
 async function main(): Promise<void> {

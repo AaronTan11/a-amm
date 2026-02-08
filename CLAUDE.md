@@ -382,6 +382,10 @@ Primary dependency is v4-core. The others are available if needed.
   - No pre-funding, registration, or whitelisting needed — any valid private key works.
   - Server sends `assets` and `channels` broadcasts after auth (not errors, just informational).
 - **Smoke test**: `bun run packages/aggregator/src/smoke-test.ts` — standalone script that verifies WebSocket connect → auth → ping against the live sandbox.
+- **`createApplicationMessage` uses method `"message"` which ClearNode does NOT support.** ClearNode's supported methods are listed in the API docs — `message` is not one of them. The correct way to send inter-participant messages is to include a `sid` (session ID) field in the JSON envelope. Any message with `sid` is automatically forwarded to all other app session participants. See `nitrolite/clearnode/docs/API.md` lines 1461-1499 and `Clearnode.protocol.md` lines 33-35.
+- **Fix for `sendAppMessage`**: After `createApplicationMessage` generates the signed JSON, parse it, inject `"sid": appSessionId`, re-serialize, and send. ClearNode routes based on `sid`, not the method name.
+- **`submitAppState`** is an alternative (more heavyweight) — carries `session_data` + `allocations` + `version`. Better for formal state updates, overkill for lightweight RFQ/quote messages.
+- **App session `nonce` is required** — `RPCAppDefinition.nonce` must be non-zero or ClearNode returns "nonce is zero or not provided". Use `Math.floor(Date.now() / 1000)`.
 
 ### ERC-8004 Integration Notes
 - **Already deployed on Sepolia** — no need to write or deploy custom registry contracts.
@@ -415,6 +419,17 @@ Primary dependency is v4-core. The others are available if needed.
 ### Frontend Display Notes
 - **Intent amounts must use token-aware formatting** — `formatUnits(amount, decimals)` not `formatEther`. USDC is 6 decimals; using `formatEther` (18 decimals) shows "0.0000" for valid amounts. The intent feed resolves decimals from the poolKey currency addresses via `TOKENS` config.
 
+### Agent Output Amount Decimal Bug
+- **Agent strategies compute `outputAmount` in input token scale, not output token scale.** For USDC→WETH swaps: `amountIn` is ~1000000 (USDC, 6 decimals), strategy returns `980000` (still USDC scale). But `fill()` stores this as the WETH output amount. Frontend formats with WETH decimals (18): `980000 / 1e18 ≈ 0` → shows "0.0000".
+- **Fix needed in strategies**: Agent must convert from input token decimals to output token decimals. For the hackathon demo pool (USDC→WETH), multiply by `1e12` (18 - 6 = 12 decimal difference). Or better: pass token decimals info in the RFQ and let agents compute properly.
+- **The contract itself is fine** — it stores whatever `outputAmount` the agent passes. The bug is in the agent's quote computation.
+
+### Sepolia Agent Deployment
+- **3 agents registered on ERC-8004**: Speedy (ID=990, `0xd94C17B860C4B0Ca8f76586803DdD07B976cA6A2`), Cautious (ID=991, `0x4210d287a6A28F96967c2424f162a0BCDd101694`), Whale (ID=992, `0x98cA02732d4646000b729292d36de6A853FF00cA`)
+- **Agent wallets funded** with 0.005 ETH + 0.005 WETH each from dev wallet.
+- **APP_SESSION_ID**: `0xda6f82153c94ce3fe32e143fdf9caba97d494a1ec0cfce9b36a87d6ca7267722`
+- **`.env` files** in `packages/agents/.env` and `packages/aggregator/.env` (gitignored) contain all keys and config.
+
 ### Current Limitations
 - Only handles exact-input swaps (`amountSpecified < 0`). Exact-output swaps pass through to the standard AMM.
 - Deadline is block-based (`DEFAULT_DEADLINE_BLOCKS = 30`), not timestamp-based.
@@ -443,4 +458,9 @@ Primary dependency is v4-core. The others are available if needed.
 - [x] Integrate ERC-8004 (direct viem + deployed Sepolia registries)
 - [x] Wire frontend to contracts (approval flow, balances, cancel/fallback, event toasts)
 - [x] Deploy hook + Circle USDC pool to Sepolia
+- [x] Register 3 demo agents on ERC-8004 (Speedy=990, Cautious=991, Whale=992)
+- [x] Fund agent wallets with ETH + WETH on Sepolia
+- [x] Agent standalone fill works (on-chain watcher, Speedy filled intent #2)
+- [ ] Fix Yellow messaging (`sid` field for message forwarding)
+- [ ] Fix agent output amount decimals (USDC→WETH scale conversion)
 - [ ] ENS integration (agent subnames)

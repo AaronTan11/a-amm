@@ -7,7 +7,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
-import { aammHookAbi, IntentStatus } from "./abi.ts";
+import { aammHookAbi, erc20Abi, IntentStatus } from "./abi.ts";
 import { YellowConnection } from "./yellow.ts";
 import { submitFeedback } from "./erc8004.ts";
 import type { AggregatorConfig } from "./config.ts";
@@ -183,6 +183,20 @@ export class Aggregator {
     };
     this.auctions.set(intentId, auction);
 
+    // Fetch token decimals for proper scale conversion
+    const [decimals0, decimals1] = await Promise.all([
+      this.client.readContract({
+        address: intent.poolKey.currency0,
+        abi: erc20Abi,
+        functionName: "decimals",
+      }),
+      this.client.readContract({
+        address: intent.poolKey.currency1,
+        abi: erc20Abi,
+        functionName: "decimals",
+      }),
+    ]);
+
     // Broadcast RFQ to agents via Yellow
     const rfq: RFQMessage = {
       type: "rfq",
@@ -192,6 +206,8 @@ export class Aggregator {
       zeroForOne: intent.zeroForOne,
       currency0: intent.poolKey.currency0,
       currency1: intent.poolKey.currency1,
+      currency0Decimals: Number(decimals0),
+      currency1Decimals: Number(decimals1),
       deadline: Number(intent.deadline),
     };
 

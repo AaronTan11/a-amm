@@ -52,3 +52,4 @@ cache/
 .cache
 tmp
 temp
+.vercel

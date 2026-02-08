@@ -6,7 +6,7 @@ import {
   type Address,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { foundry } from "viem/chains";
+import { sepolia } from "viem/chains";
 import { aammHookAbi, erc20Abi, IntentStatus } from "./abi.ts";
 import { YellowConnection } from "./yellow.ts";
 import { getStrategy } from "./strategies.ts";
@@ -20,6 +20,8 @@ interface RFQMessage {
   zeroForOne: boolean;
   currency0: Address;
   currency1: Address;
+  currency0Decimals: number;
+  currency1Decimals: number;
   deadline: number;
 }
 
@@ -35,13 +37,13 @@ export async function startAgent(config: AgentConfig): Promise<void> {
   const strategy = getStrategy(config.agentStrategy);
 
   const publicClient = createPublicClient({
-    chain: foundry,
+    chain: sepolia,
     transport: http(config.rpcUrl),
   });
 
   const walletClient = createWalletClient({
     account,
-    chain: foundry,
+    chain: sepolia,
     transport: http(config.rpcUrl),
   });
 
@@ -82,8 +84,12 @@ export async function startAgent(config: AgentConfig): Promise<void> {
     const amountIn = BigInt(rfq.amountIn);
     const minOutput = BigInt(rfq.minOutputAmount);
 
-    // Compute quote using strategy
-    const outputAmount = strategy.computeQuote(amountIn, minOutput);
+    // Determine input/output decimals based on swap direction
+    const inputDecimals = rfq.zeroForOne ? rfq.currency0Decimals : rfq.currency1Decimals;
+    const outputDecimals = rfq.zeroForOne ? rfq.currency1Decimals : rfq.currency0Decimals;
+
+    // Compute quote using strategy (with decimal conversion)
+    const outputAmount = strategy.computeQuote(amountIn, minOutput, inputDecimals, outputDecimals);
     if (outputAmount === 0n) {
       console.log(`[${strategy.name}] Skipping intent #${rfq.intentId} — not profitable`);
       return;
@@ -211,9 +217,33 @@ export async function startAgent(config: AgentConfig): Promise<void> {
           // Only direct-fill when no app session is configured (standalone mode).
           if (config.appSessionId) continue;
 
+          // Fetch intent to get pool key and token addresses
+          const intent = await publicClient.readContract({
+            address: config.hookAddress,
+            abi: aammHookAbi,
+            functionName: "getIntent",
+            args: [args.intentId as bigint],
+          });
+
+          // Fetch token decimals for proper scale conversion
+          const [decimals0, decimals1] = await Promise.all([
+            publicClient.readContract({
+              address: intent.poolKey.currency0,
+              abi: erc20Abi,
+              functionName: "decimals",
+            }),
+            publicClient.readContract({
+              address: intent.poolKey.currency1,
+              abi: erc20Abi,
+              functionName: "decimals",
+            }),
+          ]);
+
           const amountIn = args.amountIn as bigint;
           const minOutput = args.minOutputAmount as bigint;
-          const outputAmount = strategy.computeQuote(amountIn, minOutput);
+          const inputDecimals = intent.zeroForOne ? Number(decimals0) : Number(decimals1);
+          const outputDecimals = intent.zeroForOne ? Number(decimals1) : Number(decimals0);
+          const outputAmount = strategy.computeQuote(amountIn, minOutput, inputDecimals, outputDecimals);
           if (outputAmount === 0n) continue;
 
           await fillOnChain(args.intentId as bigint, outputAmount);

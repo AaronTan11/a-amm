@@ -9,6 +9,8 @@ export interface RFQMessage {
   zeroForOne: boolean;
   currency0: Address;
   currency1: Address;
+  currency0Decimals: number;
+  currency1Decimals: number;
   deadline: number;
 }
 

@@ -98,7 +98,10 @@ export class YellowConnection {
       appSessionId,
       message,
     );
-    this.send(msg);
+    // Inject sid for ClearNode routing (method "message" is unsupported)
+    const parsed = JSON.parse(msg);
+    parsed.sid = appSessionId;
+    this.send(JSON.stringify(parsed));
   }
 
   disconnect(): void {

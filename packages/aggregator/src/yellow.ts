@@ -107,7 +107,10 @@ export class YellowConnection {
       appSessionId,
       message,
     );
-    this.send(msg);
+    // Inject sid for ClearNode routing (method "message" is unsupported)
+    const parsed = JSON.parse(msg);
+    parsed.sid = appSessionId;
+    this.send(JSON.stringify(parsed));
   }
 
   /** Create an app session for quote coordination */
@@ -122,6 +125,7 @@ export class YellowConnection {
       weights: participants.map(() => 1),
       quorum: 1, // aggregator can operate unilaterally
       challenge: 86400, // 1 day challenge period
+      nonce: Math.floor(Date.now() / 1000),
     };
 
     const msg = await createAppSessionMessage(this.sessionSigner, {
@@ -130,7 +134,7 @@ export class YellowConnection {
     });
 
     const response = await this.sendAndWait(msg);
-    const appSessionId = response.params?.appSessionId;
+    const appSessionId = response.params?.appSessionId ?? response.params?.app_session_id;
     if (!appSessionId) {
       throw new Error("Failed to create app session — no appSessionId in response");
     }
